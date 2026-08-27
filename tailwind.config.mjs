@@ -13,6 +13,7 @@ export default {
         running: '#3fb950',
         idle: '#d29922',
         stopped: '#6e7681',
+        danger: '#f85149',
       },
       fontFamily: {
         ui: ['-apple-system', 'SF Pro Text', 'sans-serif'],

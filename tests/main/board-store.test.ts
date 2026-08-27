@@ -85,27 +85,30 @@ describe('reconcile', () => {
 describe('BoardStore.load', () => {
   it('檔案不存在時回傳預設看板並建立檔案', async () => {
     const store = new BoardStore(file)
-    const { board, recoveredFrom } = await store.load()
+    const { board, recoveredFrom, readOnly } = await store.load()
     expect(board.columns).toEqual([])
     expect(recoveredFrom).toBeNull()
+    expect(readOnly).toBe(false)
     await expect(fs.access(file)).resolves.toBeUndefined()
   })
 
   it('讀回先前存檔的內容', async () => {
     const original = sampleBoard()
     await fs.writeFile(file, JSON.stringify(original))
-    const { board, recoveredFrom } = await new BoardStore(file).load()
+    const { board, recoveredFrom, readOnly } = await new BoardStore(file).load()
     expect(board).toEqual(original)
     expect(recoveredFrom).toBeNull()
+    expect(readOnly).toBe(false)
   })
 
   it('JSON 損毀時備份原檔、回退預設看板，並回報備份路徑', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await fs.writeFile(file, '{ 這不是合法 JSON')
 
-    const { board, recoveredFrom } = await new BoardStore(file).load()
+    const { board, recoveredFrom, readOnly } = await new BoardStore(file).load()
     expect(board.columns).toHaveLength(0)
     expect(Object.keys(board.cards)).toHaveLength(0)
+    expect(readOnly).toBe(false)
 
     const backups = (await fs.readdir(root)).filter((f) => f.startsWith('board.json.corrupt-'))
     expect(backups).toHaveLength(1)
@@ -119,9 +122,10 @@ describe('BoardStore.load', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await fs.writeFile(file, JSON.stringify({ version: 99, foo: 'bar' }))
 
-    const { board, recoveredFrom } = await new BoardStore(file).load()
+    const { board, recoveredFrom, readOnly } = await new BoardStore(file).load()
     expect(board.columns).toHaveLength(0)
     expect(recoveredFrom).not.toBeNull()
+    expect(readOnly).toBe(false)
 
     const backups = (await fs.readdir(root)).filter((f) => f.startsWith('board.json.corrupt-'))
     expect(backups).toHaveLength(1)
@@ -133,10 +137,11 @@ describe('BoardStore.load', () => {
     broken.columns[0].cardIds.push('card_不存在')
     await fs.writeFile(file, JSON.stringify(broken))
 
-    const { board, recoveredFrom } = await new BoardStore(file).load()
+    const { board, recoveredFrom, readOnly } = await new BoardStore(file).load()
     expect(board.columns[0].cardIds).toEqual(['card_1'])
     expect(board.cards.card_1).toBeDefined()
     expect(recoveredFrom).toBeNull()
+    expect(readOnly).toBe(false)
 
     const backups = (await fs.readdir(root)).filter((f) => f.startsWith('board.json.corrupt-'))
     expect(backups).toHaveLength(0)
@@ -211,10 +216,11 @@ describe('BoardStore 唯讀模式與清理失敗', () => {
 
     try {
       const store = new BoardStore(file)
-      const { board, recoveredFrom } = await store.load()
+      const { board, recoveredFrom, readOnly } = await store.load()
 
       expect(board.columns).toEqual([])
       expect(recoveredFrom).toBeNull()
+      expect(readOnly).toBe(true)
       expect(error).toHaveBeenCalled()
     } finally {
       await fs.chmod(file, 0o644)

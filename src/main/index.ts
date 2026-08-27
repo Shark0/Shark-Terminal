@@ -10,7 +10,9 @@ import { registerIpc } from './ipc'
 // 明確設定名稱讓選單列與「關於」視窗顯示正確的 app 名稱。
 app.setName('追鯊令')
 
-const boardFile = join(homedir(), '.sharkterminal', 'board.json')
+const isDev = Boolean(process.env.ELECTRON_RENDERER_URL)
+// dev 用獨立看板檔，避免與正在使用中的正式版互相覆寫
+const boardFile = join(homedir(), '.sharkterminal', isDev ? 'board.dev.json' : 'board.json')
 const store = new BoardStore(boardFile)
 
 const ptyManager = new PtyManager((opts) =>
@@ -63,8 +65,6 @@ function createWindow(): void {
 // dev 模式下 electron-vite 熱重啟時會短暫存在新舊兩個實例，
 // 新實例會因為拿不到鎖而直接退出，導致改一次 main 程序整個 app 就關掉。
 // 單一實例保護只有打包後的正式版需要。
-const isDev = Boolean(process.env.ELECTRON_RENDERER_URL)
-
 if (!isDev && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -84,7 +84,8 @@ void app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  // 單視窗 app：關窗即結束，走 before-quit 的完整清理（flush board + killAll pty）
+  app.quit()
 })
 
 // 結束前先把待寫入的看板落地，再關掉所有 pty

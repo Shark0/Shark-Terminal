@@ -94,7 +94,7 @@ export class BoardStore {
         // 首次啟動：建立預設看板並立即落地，之後的 save 才有檔案可覆蓋
         const board = createDefaultBoard()
         await this.writeAtomic(board)
-        return { board, recoveredFrom: null }
+        return { board, recoveredFrom: null, readOnly: false }
       }
       // 檔案存在但讀不到（權限、fd 耗盡等）：絕不能覆寫它。
       // 以預設看板讓 app 能啟動，同時進入唯讀模式擋掉後續寫入。
@@ -104,7 +104,7 @@ export class BoardStore {
         err,
       })
       this.readOnly = true
-      return { board: createDefaultBoard(), recoveredFrom: null }
+      return { board: createDefaultBoard(), recoveredFrom: null, readOnly: true }
     }
 
     let parsed: unknown
@@ -112,16 +112,16 @@ export class BoardStore {
       parsed = JSON.parse(raw)
     } catch (err) {
       console.warn('[board-store] board.json 解析失敗，備份後回退預設看板', { err })
-      return { board: await this.resetToDefault(), recoveredFrom: await this.backup(raw) }
+      return { board: await this.resetToDefault(), recoveredFrom: await this.backup(raw), readOnly: false }
     }
 
     if (!isValidBoard(parsed)) {
       console.warn('[board-store] board.json 結構不符，備份後回退預設看板')
-      return { board: await this.resetToDefault(), recoveredFrom: await this.backup(raw) }
+      return { board: await this.resetToDefault(), recoveredFrom: await this.backup(raw), readOnly: false }
     }
 
     // 結構合法只是引用錯亂，修好就好，不該讓使用者整個看板消失
-    return { board: reconcile(parsed), recoveredFrom: null }
+    return { board: reconcile(parsed), recoveredFrom: null, readOnly: false }
   }
 
   /** debounce——拖拉過程中 state 每幀變動，不 debounce 會狂寫磁碟 */

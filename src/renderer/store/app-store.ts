@@ -29,6 +29,8 @@ interface AppState {
   loaded: boolean
   /** 非 null 代表看板檔曾損毀，值為備份檔路徑，供橫幅提示使用 */
   recoveryNotice: string | null
+  /** true 代表看板讀檔失敗、目前為唯讀模式，任何變更都不會存檔 */
+  readOnlyNotice: boolean
   /** key 為 cardId；沒有鍵代表從未啟動過 */
   ptyStatus: Record<string, PtyStatus>
   /** key 為 cwd，多張卡片指向同一目錄時共用 */
@@ -82,6 +84,7 @@ export const useAppStore = create<AppState>((set, get) => {
     activeCardId: null,
     loaded: false,
     recoveryNotice: null,
+    readOnlyNotice: false,
     ptyStatus: {},
     branches: {},
 
@@ -89,8 +92,8 @@ export const useAppStore = create<AppState>((set, get) => {
       if (loading) return loading
       loading = (async () => {
         try {
-          const { board, recoveredFrom } = await window.gc.board.load()
-          set({ board, loaded: true, recoveryNotice: recoveredFrom })
+          const { board, recoveredFrom, readOnly } = await window.gc.board.load()
+          set({ board, loaded: true, recoveryNotice: recoveredFrom, readOnlyNotice: readOnly })
         } catch (err) {
           console.error('[app-store] 載入看板失敗，改用空白看板', { err })
           set({ board: EMPTY_BOARD, loaded: true })
@@ -231,6 +234,10 @@ export const useAppStore = create<AppState>((set, get) => {
         get().setPtyStatus(cardId, 'running')
       } catch (err) {
         console.error('[app-store] 啟動終端機失敗', { cardId, cwd: card.cwd, err })
+        // 把失敗寫進 xterm，否則使用者只會看到一片空白且毫無線索
+        const message = err instanceof Error ? err.message : String(err)
+        term.write(`\r\n\x1b[31m啟動失敗：${message}\x1b[0m\r\n`)
+        term.write(`\x1b[90m工作目錄：${card.cwd}\x1b[0m\r\n`)
         get().setPtyStatus(cardId, 'stopped')
       }
     },

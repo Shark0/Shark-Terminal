@@ -59,6 +59,6 @@ xattr -dr com.apple.quarantine "/Applications/追鯊令.app"
 
 ## 已知限制
 
-- 關閉 app 會關掉所有終端機 session，session 不會保活
+- 關閉視窗即結束 app（不像多數 macOS app 會留在 Dock），所有終端機 session 也會跟著關掉，session 不會保活
 - 狀態燈只反映「有沒有輸出在流動」，不會判斷 Claude 是否正在等你回答
 - 目前不是 universal binary：`node-pty` 這個 native addon 在 lipo 合併階段會衝突，因此分別產出 arm64 與 x64 兩個 `.dmg`，功能完全相同，只是分發時多一個選擇步驟

@@ -38,6 +38,8 @@ export interface BoardLoadResult {
   board: Board
   /** 非 null 代表原檔損毀已被備份，值為備份檔路徑，供 UI 提示使用 */
   recoveredFrom: string | null
+  /** true 代表讀檔失敗、目前為唯讀模式，任何變更都不會存檔 */
+  readOnly: boolean
 }
 
 /** preload 經 contextBridge 暴露到 window.gc 的完整介面 */
