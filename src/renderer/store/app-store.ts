@@ -82,7 +82,12 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     deleteCard: (cardId) => {
-      window.gc.pty.kill(cardId)
+      try {
+        window.gc.pty.kill(cardId)
+      } catch (err) {
+        // kill 失敗不該擋住卡片刪除，否則使用者會看到「按了沒反應」
+        console.warn('[app-store] 刪除卡片時關閉終端機失敗', { cardId, err })
+      }
       const { activeCardId } = get()
       if (activeCardId === cardId) set({ activeCardId: null })
       persist(deleteCard(get().board, cardId))
@@ -105,8 +110,15 @@ export const useAppStore = create<AppState>((set, get) => {
     deleteColumn: (columnId) => {
       const { board, activeCardId } = get()
       const result = deleteColumn(board, columnId)
-      // 欄位連同卡片一起消失，對應的 pty 也要收掉
-      for (const cardId of result.removedCardIds) window.gc.pty.kill(cardId)
+      // 欄位連同卡片一起消失，對應的 pty 也要收掉；逐張包 try/catch，
+      // 避免其中一張 kill 失敗就中斷迴圈、導致後面的卡片沒被收掉
+      for (const cardId of result.removedCardIds) {
+        try {
+          window.gc.pty.kill(cardId)
+        } catch (err) {
+          console.warn('[app-store] 刪除欄位時關閉終端機失敗', { columnId, cardId, err })
+        }
+      }
       if (activeCardId && result.removedCardIds.includes(activeCardId)) set({ activeCardId: null })
       persist(result.board)
     },

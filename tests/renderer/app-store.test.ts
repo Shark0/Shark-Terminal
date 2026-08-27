@@ -121,6 +121,23 @@ describe('deleteCard', () => {
     expect(gc.pty.kill).toHaveBeenCalledWith('card_a')
     expect(useAppStore.getState().activeCardId).toBe('card_b')
   })
+
+  it('pty.kill 拋出時仍完成刪除、清空 activeCardId、呼叫 save，並記錄 console.warn', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    gc.pty.kill.mockImplementationOnce(() => {
+      throw new Error('kill 失敗')
+    })
+    useAppStore.setState({ board: fixtureBoard(), activeCardId: 'card_a', loaded: true })
+
+    useAppStore.getState().deleteCard('card_a')
+
+    expect(useAppStore.getState().activeCardId).toBeNull()
+    expect(useAppStore.getState().board.cards.card_a).toBeUndefined()
+    expect(gc.board.save).toHaveBeenCalledTimes(1)
+    expect(warnSpy).toHaveBeenCalled()
+
+    warnSpy.mockRestore()
+  })
 })
 
 describe('deleteColumn', () => {
@@ -150,6 +167,30 @@ describe('deleteColumn', () => {
 
     expect(gc.pty.kill).not.toHaveBeenCalled()
     expect(useAppStore.getState().activeCardId).toBe('card_a')
+  })
+
+  it('第一張卡片 kill 拋出時，後續卡片的 kill 仍會被呼叫（逐張包 try/catch，而非包整個迴圈）', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let board = fixtureBoard()
+    board = reducerAddCard(
+      board,
+      'col_0',
+      newCard({ title: 'card_b', cwd: '/tmp/b', command: 'claude' }, 'card_b', NOW),
+    )
+    useAppStore.setState({ board, activeCardId: null, loaded: true })
+    gc.pty.kill.mockImplementationOnce(() => {
+      throw new Error('第一張卡片 kill 失敗')
+    })
+
+    useAppStore.getState().deleteColumn('col_0')
+
+    // 若迴圈整個包一次 try/catch，第一次拋出後 card_b 就不會被呼叫到，這裡會只等於 1 次
+    expect(gc.pty.kill).toHaveBeenCalledTimes(2)
+    expect(gc.pty.kill).toHaveBeenCalledWith('card_a')
+    expect(gc.pty.kill).toHaveBeenCalledWith('card_b')
+    expect(warnSpy).toHaveBeenCalled()
+
+    warnSpy.mockRestore()
   })
 })
 

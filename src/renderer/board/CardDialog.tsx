@@ -85,8 +85,11 @@ export default function CardDialog({ card, onCancel, onSubmit, onDelete }: Props
           value={draft.command}
           onChange={(e) => setDraft({ ...draft, command: e.target.value })}
           placeholder="claude"
-          className="mb-3 w-full rounded border border-line bg-card px-2 py-1.5 font-mono text-[12px] text-fg outline-none focus:border-line-hover"
+          className="w-full rounded border border-line bg-card px-2 py-1.5 font-mono text-[12px] text-fg outline-none focus:border-line-hover"
         />
+        <p className="mb-3 text-[11px] leading-4 text-fg-dim">
+          留空則只開啟 shell，不自動執行任何指令
+        </p>
 
         <label className="mb-1 block text-[11px] text-fg-dim">備註</label>
         <textarea
