@@ -10,7 +10,7 @@ import { registerIpc } from './ipc'
 // 明確設定名稱讓選單列與「關於」視窗顯示正確的 app 名稱。
 app.setName('追鯊令')
 
-const boardFile = join(homedir(), '.sharkcommand', 'board.json')
+const boardFile = join(homedir(), '.sharkterminal', 'board.json')
 const store = new BoardStore(boardFile)
 
 const ptyManager = new PtyManager((opts) =>
@@ -57,7 +57,7 @@ function createWindow(): void {
   }
 }
 
-// 兩個實例會各自持有記憶體中的 board 並互相覆蓋 ~/.sharkcommand/board.json，
+// 兩個實例會各自持有記憶體中的 board 並互相覆蓋 ~/.sharkterminal/board.json，
 // 造成資料遺失。第二個實例直接退出，並把既有視窗帶到前景。
 //
 // dev 模式下 electron-vite 熱重啟時會短暫存在新舊兩個實例，

@@ -1,5 +1,5 @@
 {
-  "name": "sharkcommand",
+  "name": "shark-terminal",
   "version": "0.1.0",
   "description": "Trello 式看板管理多個 Claude Code session",
   "main": "./out/main/index.js",

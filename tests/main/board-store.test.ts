@@ -10,7 +10,7 @@ let root: string
 let file: string
 
 beforeEach(async () => {
-  root = await fs.mkdtemp(path.join(tmpdir(), 'sharkcommand-store-'))
+  root = await fs.mkdtemp(path.join(tmpdir(), 'shark-terminal-store-'))
   file = path.join(root, 'board.json')
 })
 

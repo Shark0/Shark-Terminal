@@ -39,8 +39,8 @@ npm run build:mac # 打包成 .dmg（arm64 與 x64 各一包）
 
 打包會依 Mac 的 CPU 架構產出**兩個** `.dmg`，請依你的機型下載對應版本：
 
-- **Apple Silicon**（M1 / M2 / M3 / M4 系列）：`SharkCommand-0.1.0-arm64.dmg`
-- **Intel**：`SharkCommand-0.1.0.dmg`
+- **Apple Silicon**（M1 / M2 / M3 / M4 系列）：`SharkTerminal-0.1.0-arm64.dmg`
+- **Intel**：`SharkTerminal-0.1.0-x64.dmg`
 
 不確定自己是哪種機型可點左上角 選單 → 關於這台 Mac 確認晶片型號。
 
@@ -55,7 +55,7 @@ xattr -dr com.apple.quarantine "/Applications/追鯊令.app"
 
 ## 資料存放
 
-看板資料存在 `~/.sharkcommand/board.json`，純文字 JSON，可自行編輯或備份。檔案損毀時會自動備份成 `board.json.corrupt-<timestamp>` 並回退成預設看板。
+看板資料存在 `~/.sharkterminal/board.json`，純文字 JSON，可自行編輯或備份。檔案損毀時會自動備份成 `board.json.corrupt-<timestamp>` 並回退成預設看板。
 
 ## 已知限制
 

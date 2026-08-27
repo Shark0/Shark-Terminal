@@ -16,7 +16,7 @@
 - **Electron 安全設定**：一律 `contextIsolation: true`、`nodeIntegration: false`、`sandbox: false`（preload 需 require `electron`）
 - **renderer 不得 import Node 模組**：`node-pty`、`fs`、`path` 只能出現在 `src/main/**`
 - **所有 UI 文字、程式碼註解、logger 訊息使用繁體中文**；變數、函式、型別名稱維持英文
-- **設定檔路徑**：`~/.sharkcommand/board.json`
+- **設定檔路徑**：`~/.sharkterminal/board.json`
 - **debounce 常數**：board 存檔 500ms、terminal resize 100ms
 - **狀態燈門檻**：最近 2000ms 內有 output 為 `running`，否則 `idle`
 - **pty 關閉流程**：SIGTERM → 等 500ms → SIGKILL
@@ -137,7 +137,7 @@ tests/
 
 ```json
 {
-  "name": "sharkcommand",
+  "name": "shark-terminal",
   "version": "0.1.0",
   "description": "Trello 式看板管理多個 Claude Code session",
   "main": "./out/main/index.js",
@@ -1097,7 +1097,7 @@ import { readBranch } from '../../src/main/git'
 let root: string
 
 beforeEach(async () => {
-  root = await fs.mkdtemp(path.join(tmpdir(), 'sharkcommand-git-'))
+  root = await fs.mkdtemp(path.join(tmpdir(), 'shark-terminal-git-'))
 })
 
 afterEach(async () => {
@@ -1326,7 +1326,7 @@ let root: string
 let file: string
 
 beforeEach(async () => {
-  root = await fs.mkdtemp(path.join(tmpdir(), 'sharkcommand-store-'))
+  root = await fs.mkdtemp(path.join(tmpdir(), 'shark-terminal-store-'))
   file = path.join(root, 'board.json')
 })
 
@@ -2284,7 +2284,7 @@ import { BoardStore } from './board-store'
 import { PtyManager } from './pty-manager'
 import { registerIpc } from './ipc'
 
-const boardFile = join(homedir(), '.sharkcommand', 'board.json')
+const boardFile = join(homedir(), '.sharkterminal', 'board.json')
 const store = new BoardStore(boardFile)
 
 const ptyManager = new PtyManager((opts) =>
@@ -2464,7 +2464,7 @@ Run: `npm run dev`
 依序確認：
 
 1. 視窗顯示的 JSON 含四個預設欄位（`需求評估中` / `開發中` / `Review 中` / `等待 Merge`）
-2. `cat ~/.sharkcommand/board.json` — 檔案已建立且內容一致
+2. `cat ~/.sharkterminal/board.json` — 檔案已建立且內容一致
 3. 開啟 DevTools（⌥⌘I），在 Console 執行以下指令，確認終端機互動可用：
 
 ```js
@@ -3148,14 +3148,14 @@ Run: `npm run dev`
 
 1. 看到四個欄位，各有 3px 色帶且顏色不同
 2. 點欄位的「＋」→ 填標題、按「選擇…」挑目錄、按儲存 → 卡片出現在該欄
-3. `cat ~/.sharkcommand/board.json` — 卡片已寫入
+3. `cat ~/.sharkterminal/board.json` — 卡片已寫入
 4. 雙擊卡片 → 開啟編輯對話框，改標題後儲存 → 卡片標題更新
 5. 編輯對話框按「刪除」→ 確認後卡片消失
 6. 雙擊欄位標題 → 可改名，Enter 生效、Esc 取消
 7. 按「＋ 新增欄位」→ 新欄位出現在最右且顏色與前一欄不同
 8. 刪除有卡片的欄位 → 確認訊息提到卡片數量，確認後欄位與卡片一起消失
 9. ⌘Q 後重開 `npm run dev` → 所有變更都還在
-10. 損毀容錯：`echo 'x' > ~/.sharkcommand/board.json` 後重開 app → 頂端出現橫幅並指出備份檔路徑，按「知道了」可關閉
+10. 損毀容錯：`echo 'x' > ~/.sharkterminal/board.json` 後重開 app → 頂端出現橫幅並指出備份檔路徑，按「知道了」可關閉
 
 Run: `npm test && npm run typecheck`
 Expected: 全綠、無型別錯誤
@@ -3620,7 +3620,7 @@ Run: `npm run dev`
 6. 拖曳欄位標題可調整欄位左右順序，卡片跟著整欄移動
 7. 拖曳欄位標題以外的區域**不會**拖動欄位
 8. 單擊卡片仍能選取（不會被誤判成拖曳）
-9. 每次拖拉結束後 `cat ~/.sharkcommand/board.json` 確認順序已寫入；拖拉過程中檔案不應被反覆改寫
+9. 每次拖拉結束後 `cat ~/.sharkterminal/board.json` 確認順序已寫入；拖拉過程中檔案不應被反覆改寫
 
 Run: `npm test && npm run typecheck`
 Expected: 全綠、無型別錯誤
@@ -3985,7 +3985,7 @@ export default function TerminalPane(): JSX.Element {
 ```tsx
 import { useCallback, useEffect, useRef } from 'react'
 
-const STORAGE_KEY = 'sharkcommand.splitRatio'
+const STORAGE_KEY = 'sharkterminal.splitRatio'
 const MIN_RATIO = 0.2
 const MAX_RATIO = 0.8
 
@@ -4836,7 +4836,7 @@ import CommandPalette from './CommandPalette'
 `electron-builder.yml`：
 
 ```yaml
-appId: com.shark.sharkcommand
+appId: com.shark.sharkterminal
 productName: 追鯊令
 
 directories:
@@ -4861,7 +4861,7 @@ mac:
 - [ ] **Step 8: 打包並驗證**
 
 Run: `npm run build:mac`
-Expected: `release/SharkCommand-0.1.0-arm64.dmg` 與 `release/SharkCommand-0.1.0.dmg` 產生（檔名以 artifactName 維持英文，避免中文檔名的編碼問題）
+Expected: `release/SharkTerminal-0.1.0-arm64.dmg` 與 `release/SharkTerminal-0.1.0.dmg` 產生（檔名以 artifactName 維持英文，避免中文檔名的編碼問題）
 
 **若 universal 打包因 `node-pty` 失敗**（native addon 的 universal 合併偶爾會在 lipo 階段出錯），把 `electron-builder.yml` 的 `arch` 改成分別出兩包：
 
@@ -4936,7 +4936,7 @@ xattr -dr com.apple.quarantine "/Applications/追鯊令.app"
 
 ## 資料存放
 
-看板資料存在 `~/.sharkcommand/board.json`，純文字 JSON，可自行編輯或備份。檔案損毀時會自動備份成 `board.json.corrupt-<timestamp>` 並回退成預設看板。
+看板資料存在 `~/.sharkterminal/board.json`，純文字 JSON，可自行編輯或備份。檔案損毀時會自動備份成 `board.json.corrupt-<timestamp>` 並回退成預設看板。
 
 ## 已知限制
 

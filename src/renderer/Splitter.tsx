@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 
-const STORAGE_KEY = 'sharkcommand.splitRatio'
+const STORAGE_KEY = 'sharkterminal.splitRatio'
 const MIN_RATIO = 0.2
 const MAX_RATIO = 0.8
 

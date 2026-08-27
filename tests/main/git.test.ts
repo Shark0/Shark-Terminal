@@ -7,7 +7,7 @@ import { readBranch } from '../../src/main/git'
 let root: string
 
 beforeEach(async () => {
-  root = await fs.mkdtemp(path.join(tmpdir(), 'sharkcommand-git-'))
+  root = await fs.mkdtemp(path.join(tmpdir(), 'shark-terminal-git-'))
 })
 
 afterEach(async () => {
