@@ -1,10 +1,10 @@
-# SharkCommand
+# 追鯊令
 
 以 Trello 式看板管理多個 Claude Code session 的 macOS 應用。欄位代表工作階段，卡片代表一個內嵌終端機 session，拖拉卡片即可推進階段。
 
 ## 為什麼做這個
 
-同時跑十幾個 Claude Code session 時，終端機的分頁是一維水平排開的：看不出哪個在哪個階段，也分不清哪個分頁在做什麼。SharkCommand 用二維看板取代那條 tab bar。
+同時跑十幾個 Claude Code session 時，終端機的分頁是一維水平排開的：看不出哪個在哪個階段，也分不清哪個分頁在做什麼。追鯊令用二維看板取代那條 tab bar。
 
 ## 功能
 
@@ -44,11 +44,11 @@ npm run build:mac # 打包成 .dmg（arm64 與 x64 各一包）
 
 不確定自己是哪種機型可點左上角 選單 → 關於這台 Mac 確認晶片型號。
 
-1. 掛載對應的 `.dmg`，把 `SharkCommand.app` 拖進「應用程式」
+1. 掛載對應的 `.dmg`，把 `追鯊令.app` 拖進「應用程式」
 2. 這個 app 沒有經過 Apple 簽名，第一次開啟會被 Gatekeeper 擋下並顯示「無法驗證開發者」。執行以下指令解除，一次就好：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/SharkCommand.app
+xattr -dr com.apple.quarantine "/Applications/追鯊令.app"
 ```
 
 3. 正常開啟
