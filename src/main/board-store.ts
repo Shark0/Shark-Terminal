@@ -75,6 +75,8 @@ export function reconcile(board: Board): Board {
 export class BoardStore {
   private timer: NodeJS.Timeout | null = null
   private pending: Board | null = null
+  /** 讀檔失敗且原檔可能存在時進入唯讀，避免後續寫入覆蓋掉讀不到的原檔 */
+  private readOnly = false
 
   constructor(
     private readonly filePath: string,
@@ -86,11 +88,23 @@ export class BoardStore {
     let raw: string
     try {
       raw = await fs.readFile(this.filePath, 'utf8')
-    } catch {
-      // 首次啟動：建立預設看板並立即落地，之後的 save 才有檔案可覆蓋
-      const board = createDefaultBoard(this.genId)
-      await this.writeAtomic(board)
-      return { board, recoveredFrom: null }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') {
+        // 首次啟動：建立預設看板並立即落地，之後的 save 才有檔案可覆蓋
+        const board = createDefaultBoard(this.genId)
+        await this.writeAtomic(board)
+        return { board, recoveredFrom: null }
+      }
+      // 檔案存在但讀不到（權限、fd 耗盡等）：絕不能覆寫它。
+      // 以預設看板讓 app 能啟動，同時進入唯讀模式擋掉後續寫入。
+      console.error('[board-store] 讀取 board.json 失敗，改以預設看板啟動並停用寫入', {
+        filePath: this.filePath,
+        code,
+        err,
+      })
+      this.readOnly = true
+      return { board: createDefaultBoard(this.genId), recoveredFrom: null }
     }
 
     let parsed: unknown
@@ -112,15 +126,22 @@ export class BoardStore {
 
   /** debounce——拖拉過程中 state 每幀變動，不 debounce 會狂寫磁碟 */
   save(board: Board): void {
+    if (this.readOnly) {
+      console.warn('[board-store] 目前為唯讀模式，略過此次存檔', { filePath: this.filePath })
+      return
+    }
     this.pending = board
     if (this.timer) clearTimeout(this.timer)
     this.timer = setTimeout(() => {
-      void this.flush()
+      void this.flush().catch((err) => {
+        console.error('[board-store] debounce 存檔失敗', { filePath: this.filePath, err })
+      })
     }, this.debounceMs)
   }
 
   /** 立即寫出待寫入內容，app 結束前呼叫以免最後一次變更遺失 */
   async flush(): Promise<void> {
+    if (this.readOnly) return
     if (this.timer) {
       clearTimeout(this.timer)
       this.timer = null
@@ -140,7 +161,12 @@ export class BoardStore {
       await fs.rename(tmp, this.filePath)
     } catch (err) {
       console.error('[board-store] 寫入 board.json 失敗', { filePath: this.filePath, err })
-      await fs.rm(tmp, { force: true })
+      // 清理暫存檔本身也可能失敗（權限等），絕不可讓它把例外往外拋
+      try {
+        await fs.rm(tmp, { force: true })
+      } catch (cleanupErr) {
+        console.warn('[board-store] 清理暫存檔失敗，可能殘留 .tmp', { tmp, err: cleanupErr })
+      }
     }
   }
 
