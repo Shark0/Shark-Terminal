@@ -2629,8 +2629,15 @@ export const useAppStore = create<AppState>((set, get) => {
     deleteColumn: (columnId) => {
       const { board, activeCardId } = get()
       const result = deleteColumn(board, columnId)
-      // 欄位連同卡片一起消失，對應的 pty 也要收掉
-      for (const cardId of result.removedCardIds) window.gc.pty.kill(cardId)
+      // 欄位連同卡片一起消失，對應的 pty 也要收掉。
+      // 逐張包 try/catch 而非整個迴圈包一次：否則第一張失敗就會跳過其餘所有卡片
+      for (const cardId of result.removedCardIds) {
+        try {
+          window.gc.pty.kill(cardId)
+        } catch (err) {
+          console.warn('[app-store] 刪除欄位時關閉終端機失敗', { columnId, cardId, err })
+        }
+      }
       if (activeCardId && result.removedCardIds.includes(activeCardId)) set({ activeCardId: null })
       persist(result.board)
     },
@@ -2871,8 +2878,11 @@ export default function CardDialog({ card, onCancel, onSubmit, onDelete }: Props
           value={draft.command}
           onChange={(e) => setDraft({ ...draft, command: e.target.value })}
           placeholder="claude"
-          className="mb-3 w-full rounded border border-line bg-card px-2 py-1.5 font-mono text-[12px] text-fg outline-none focus:border-line-hover"
+          className="w-full rounded border border-line bg-card px-2 py-1.5 font-mono text-[12px] text-fg outline-none focus:border-line-hover"
         />
+        <p className="mb-3 text-[11px] leading-4 text-fg-dim">
+          留空則只開啟 shell，不自動執行任何指令
+        </p>
 
         <label className="mb-1 block text-[11px] text-fg-dim">備註</label>
         <textarea
@@ -3770,7 +3780,12 @@ import { disposeTerminal, ensureTerminal } from '../terminal/terminal-registry'
 
 ```ts
     deleteCard: (cardId) => {
-      window.gc.pty.kill(cardId)
+      try {
+        window.gc.pty.kill(cardId)
+      } catch (err) {
+        // kill 失敗不該擋住卡片刪除，否則使用者會看到「按了沒反應」且無錯誤訊息
+        console.warn('[app-store] 刪除卡片時關閉終端機失敗', { cardId, err })
+      }
       disposeTerminal(cardId)
       const { activeCardId } = get()
       if (activeCardId === cardId) set({ activeCardId: null })
