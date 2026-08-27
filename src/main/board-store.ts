@@ -1,0 +1,165 @@
+import { randomUUID } from 'node:crypto'
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
+import type { Board, BoardLoadResult, Card, Column } from '@shared/types'
+import { createDefaultBoard } from '@shared/factory'
+
+const SAVE_DEBOUNCE_MS = 500
+
+function isColumn(value: unknown): value is Column {
+  if (typeof value !== 'object' || value === null) return false
+  const c = value as Record<string, unknown>
+  return (
+    typeof c.id === 'string' &&
+    typeof c.title === 'string' &&
+    typeof c.color === 'string' &&
+    Array.isArray(c.cardIds) &&
+    c.cardIds.every((id) => typeof id === 'string')
+  )
+}
+
+function isCard(value: unknown): value is Card {
+  if (typeof value !== 'object' || value === null) return false
+  const c = value as Record<string, unknown>
+  return (
+    typeof c.id === 'string' &&
+    typeof c.title === 'string' &&
+    typeof c.cwd === 'string' &&
+    typeof c.command === 'string' &&
+    typeof c.note === 'string' &&
+    typeof c.createdAt === 'string' &&
+    typeof c.updatedAt === 'string'
+  )
+}
+
+export function isValidBoard(value: unknown): value is Board {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const b = value as Record<string, unknown>
+  if (b.version !== 1) return false
+  if (!Array.isArray(b.columns) || !b.columns.every(isColumn)) return false
+  if (typeof b.cards !== 'object' || b.cards === null || Array.isArray(b.cards)) return false
+  return Object.values(b.cards as Record<string, unknown>).every(isCard)
+}
+
+/**
+ * 修復引用不一致：
+ * 1. 移除 cardIds 中指向不存在卡片的 id
+ * 2. 不屬於任何欄位的孤兒卡片放進第一欄；若無任何欄位則捨棄
+ * 結構合法但引用錯亂時用這個修，不該讓使用者整個看板被重置。
+ */
+export function reconcile(board: Board): Board {
+  const columns = board.columns.map((c) => ({
+    ...c,
+    cardIds: c.cardIds.filter((id) => {
+      if (board.cards[id]) return true
+      console.warn('[board-store] 移除指向不存在卡片的引用', { columnId: c.id, cardId: id })
+      return false
+    }),
+  }))
+
+  const placed = new Set(columns.flatMap((c) => c.cardIds))
+  const orphans = Object.keys(board.cards).filter((id) => !placed.has(id))
+
+  if (orphans.length === 0) return { ...board, columns }
+
+  if (columns.length === 0) {
+    console.warn('[board-store] 看板沒有任何欄位，捨棄孤兒卡片', { orphans })
+    return { ...board, columns, cards: {} }
+  }
+
+  console.warn('[board-store] 將孤兒卡片歸入第一欄', { orphans })
+  columns[0] = { ...columns[0], cardIds: [...columns[0].cardIds, ...orphans] }
+  return { ...board, columns }
+}
+
+export class BoardStore {
+  private timer: NodeJS.Timeout | null = null
+  private pending: Board | null = null
+
+  constructor(
+    private readonly filePath: string,
+    private readonly genId: () => string = randomUUID,
+    private readonly debounceMs: number = SAVE_DEBOUNCE_MS,
+  ) {}
+
+  async load(): Promise<BoardLoadResult> {
+    let raw: string
+    try {
+      raw = await fs.readFile(this.filePath, 'utf8')
+    } catch {
+      // 首次啟動：建立預設看板並立即落地，之後的 save 才有檔案可覆蓋
+      const board = createDefaultBoard(this.genId)
+      await this.writeAtomic(board)
+      return { board, recoveredFrom: null }
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch (err) {
+      console.warn('[board-store] board.json 解析失敗，備份後回退預設看板', { err })
+      return { board: await this.resetToDefault(), recoveredFrom: await this.backup(raw) }
+    }
+
+    if (!isValidBoard(parsed)) {
+      console.warn('[board-store] board.json 結構不符，備份後回退預設看板')
+      return { board: await this.resetToDefault(), recoveredFrom: await this.backup(raw) }
+    }
+
+    // 結構合法只是引用錯亂，修好就好，不該讓使用者整個看板消失
+    return { board: reconcile(parsed), recoveredFrom: null }
+  }
+
+  /** debounce——拖拉過程中 state 每幀變動，不 debounce 會狂寫磁碟 */
+  save(board: Board): void {
+    this.pending = board
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = setTimeout(() => {
+      void this.flush()
+    }, this.debounceMs)
+  }
+
+  /** 立即寫出待寫入內容，app 結束前呼叫以免最後一次變更遺失 */
+  async flush(): Promise<void> {
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    const board = this.pending
+    if (!board) return
+    this.pending = null
+    await this.writeAtomic(board)
+  }
+
+  /** 先寫 .tmp 再 rename——rename 是原子操作，避免寫到一半中斷造成半截 JSON */
+  private async writeAtomic(board: Board): Promise<void> {
+    const tmp = `${this.filePath}.tmp`
+    try {
+      await fs.mkdir(path.dirname(this.filePath), { recursive: true })
+      await fs.writeFile(tmp, JSON.stringify(board, null, 2), 'utf8')
+      await fs.rename(tmp, this.filePath)
+    } catch (err) {
+      console.error('[board-store] 寫入 board.json 失敗', { filePath: this.filePath, err })
+      await fs.rm(tmp, { force: true })
+    }
+  }
+
+  /** 回傳備份檔路徑供 UI 提示；備份失敗回傳 null，但仍照常回退預設看板 */
+  private async backup(raw: string): Promise<string | null> {
+    const target = `${this.filePath}.corrupt-${Date.now()}`
+    try {
+      await fs.writeFile(target, raw, 'utf8')
+      console.warn('[board-store] 已備份損毀的 board.json', { target })
+      return target
+    } catch (err) {
+      console.error('[board-store] 備份損毀的 board.json 失敗', { target, err })
+      return null
+    }
+  }
+
+  private async resetToDefault(): Promise<Board> {
+    const board = createDefaultBoard(this.genId)
+    await this.writeAtomic(board)
+    return board
+  }
+}
