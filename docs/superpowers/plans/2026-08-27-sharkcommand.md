@@ -3756,7 +3756,13 @@ import { disposeTerminal, ensureTerminal } from '../terminal/terminal-registry'
 
 ```ts
     setPtyStatus: (cardId, status) =>
-      set((state) => ({ ptyStatus: { ...state.ptyStatus, [cardId]: status } })),
+      set((state) => {
+        // 卡片已被刪除時，延遲送達的 pty:exit 不該把它的狀態寫回來。
+        // TerminalHost 是用 ptyStatus 的 key 決定要掛載哪些終端機，
+        // 復活的 key 會生出一個永遠看不到、也永遠不會被回收的 xterm 實例。
+        if (!state.board.cards[cardId]) return state
+        return { ptyStatus: { ...state.ptyStatus, [cardId]: status } }
+      }),
 
     startPty: async (cardId) => {
       const card = get().board.cards[cardId]
@@ -4028,7 +4034,11 @@ export default function Splitter({ onChange, onCommit }: Props): JSX.Element {
 
   return (
     <div
-      onPointerDown={() => {
+      onPointerDown={(e) => {
+        // 捕捉指標：拖曳中若指標移出視窗，pointerup 仍會送達，
+        // 否則 dragging 會卡在 true、游標卡在 row-resize，
+        // 且下一次任意 pointerup 會用過期的 lastRatio 覆寫 localStorage
+        e.currentTarget.setPointerCapture(e.pointerId)
         dragging.current = true
         document.body.style.cursor = 'row-resize'
       }}
@@ -4094,6 +4104,16 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('resize', scheduleFit)
   }, [scheduleFit])
 
+  // 必須是穩定參照：內聯匿名函式每次 render 都是新的，
+  // 會讓 Splitter 註冊 window 監聽器的 effect 在拖曳期間反覆重綁
+  const handleSplitChange = useCallback(
+    (next: number) => {
+      setRatio(next)
+      scheduleFit()
+    },
+    [scheduleFit],
+  )
+
   if (!loaded) {
     return <div className="flex h-full items-center justify-center text-fg-dim">載入中…</div>
   }
@@ -4105,13 +4125,7 @@ export default function App(): JSX.Element {
       <div style={{ flexGrow: ratio, flexBasis: 0 }} className="min-h-0">
         <BoardPane home={home} />
       </div>
-      <Splitter
-        onChange={(next) => {
-          setRatio(next)
-          scheduleFit()
-        }}
-        onCommit={scheduleFit}
-      />
+      <Splitter onChange={handleSplitChange} onCommit={scheduleFit} />
       <div style={{ flexGrow: 1 - ratio, flexBasis: 0 }} className="min-h-0">
         <TerminalPane />
       </div>
