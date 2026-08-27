@@ -16,6 +16,8 @@ export default function Column({ column, home, onAddCard, onEditCard }: Props): 
   const cards = useAppStore((s) => s.board.cards)
   const activeCardId = useAppStore((s) => s.activeCardId)
   const setActiveCard = useAppStore((s) => s.setActiveCard)
+  const ptyStatus = useAppStore((s) => s.ptyStatus)
+  const branches = useAppStore((s) => s.branches)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
@@ -52,6 +54,8 @@ export default function Column({ column, home, onAddCard, onEditCard }: Props): 
                 columnId={column.id}
                 home={home}
                 active={activeCardId === cardId}
+                status={ptyStatus[cardId]}
+                branch={branches[card.cwd]}
                 onSelect={() => setActiveCard(cardId)}
                 onEdit={() => onEditCard(cardId)}
               />

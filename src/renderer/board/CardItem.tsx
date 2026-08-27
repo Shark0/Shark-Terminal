@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { Card } from '@shared/types'
+import type { Card, PtyStatus } from '@shared/types'
+import StatusDot from './StatusDot'
 
 /** 把家目錄縮寫成 ~，路徑過長時只留最後兩層 */
 export function shortenPath(cwd: string, home: string): string {
@@ -14,6 +15,9 @@ interface Props {
   columnId: string
   active: boolean
   home: string
+  status: PtyStatus | undefined
+  /** undefined 代表尚未查詢，null 代表非 git 目錄 */
+  branch: string | null | undefined
   onSelect: () => void
   onEdit: () => void
 }
@@ -23,6 +27,8 @@ export default function CardItem({
   columnId,
   active,
   home,
+  status,
+  branch,
   onSelect,
   onEdit,
 }: Props): JSX.Element {
@@ -56,9 +62,17 @@ export default function CardItem({
         active ? 'border-line-hover ring-1 ring-line-hover' : 'border-line'
       } ${isDragging ? 'opacity-30' : ''}`}
     >
-      <div className="truncate text-[13px] leading-5 text-fg">{card.title}</div>
-      <div className="mt-0.5 truncate font-mono text-[11px] leading-4 text-fg-dim">
-        {shortenPath(card.cwd, home)}
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-fg">{card.title}</span>
+        <StatusDot status={status} />
+      </div>
+      <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] leading-4 text-fg-dim">
+        <span className="min-w-0 truncate">{shortenPath(card.cwd, home)}</span>
+        {branch && (
+          <span className="shrink-0 truncate rounded bg-base px-1 text-[10px]" title={branch}>
+            {branch}
+          </span>
+        )}
       </div>
     </div>
   )

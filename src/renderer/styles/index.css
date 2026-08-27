@@ -17,3 +17,18 @@ body {
   color: theme('colors.fg');
   font-family: theme('fontFamily.ui');
 }
+
+/* 呼吸而非閃爍——一堆卡片同時閃爍在餘光中很干擾 */
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.animate-breathe {
+  animation: breathe 2s ease-in-out infinite;
+}

@@ -14,6 +14,7 @@ import {
   updateCard,
   updateColumn,
 } from './board-reducer'
+import { clearActivity, computeStatus } from './pty-activity'
 
 export interface CardInput {
   title: string
@@ -30,6 +31,8 @@ interface AppState {
   recoveryNotice: string | null
   /** key 為 cardId；沒有鍵代表從未啟動過 */
   ptyStatus: Record<string, PtyStatus>
+  /** key 為 cwd，多張卡片指向同一目錄時共用 */
+  branches: Record<string, string | null>
 
   loadBoard: () => Promise<void>
   setActiveCard: (cardId: string | null) => void
@@ -48,6 +51,8 @@ interface AppState {
   startPty: (cardId: string) => Promise<void>
   stopPty: (cardId: string) => void
   setPtyStatus: (cardId: string, status: PtyStatus) => void
+  refreshPtyStatuses: () => void
+  loadBranches: () => Promise<void>
 
   /** 拖拉期間更新畫面但不存檔 */
   previewBoard: (board: Board) => void
@@ -66,21 +71,34 @@ export const useAppStore = create<AppState>((set, get) => {
     void window.gc.board.save(board)
   }
 
+  /**
+   * 進行中的載入。併發呼叫共用同一個 Promise，避免較晚 resolve 的那次
+   * 用舊快照覆蓋期間的所有變更（StrictMode 會讓 effect 跑兩次）。
+   */
+  let loading: Promise<void> | null = null
+
   return {
     board: EMPTY_BOARD,
     activeCardId: null,
     loaded: false,
     recoveryNotice: null,
     ptyStatus: {},
+    branches: {},
 
-    loadBoard: async () => {
-      try {
-        const { board, recoveredFrom } = await window.gc.board.load()
-        set({ board, loaded: true, recoveryNotice: recoveredFrom })
-      } catch (err) {
-        console.error('[app-store] 載入看板失敗，改用空白看板', { err })
-        set({ board: EMPTY_BOARD, loaded: true })
-      }
+    loadBoard: () => {
+      if (loading) return loading
+      loading = (async () => {
+        try {
+          const { board, recoveredFrom } = await window.gc.board.load()
+          set({ board, loaded: true, recoveryNotice: recoveredFrom })
+        } catch (err) {
+          console.error('[app-store] 載入看板失敗，改用空白看板', { err })
+          set({ board: EMPTY_BOARD, loaded: true })
+        } finally {
+          loading = null
+        }
+      })()
+      return loading
     },
 
     setActiveCard: (cardId) => set({ activeCardId: cardId }),
@@ -104,6 +122,7 @@ export const useAppStore = create<AppState>((set, get) => {
         console.warn('[app-store] 刪除卡片時關閉終端機失敗', { cardId, err })
       }
       disposeTerminal(cardId)
+      clearActivity(cardId)
       const { activeCardId } = get()
       if (activeCardId === cardId) set({ activeCardId: null })
       set((state) => {
@@ -140,6 +159,7 @@ export const useAppStore = create<AppState>((set, get) => {
           console.warn('[app-store] 刪除欄位時關閉終端機失敗', { columnId, cardId, err })
         }
         disposeTerminal(cardId)
+        clearActivity(cardId)
       }
       if (activeCardId && result.removedCardIds.includes(activeCardId)) set({ activeCardId: null })
       set((state) => {
@@ -162,6 +182,41 @@ export const useAppStore = create<AppState>((set, get) => {
         if (!state.board.cards[cardId]) return state
         return { ptyStatus: { ...state.ptyStatus, [cardId]: status } }
       }),
+
+    /** 每 500ms 由 App 呼叫；只在真的有變化時才 set，避免無謂重繪 */
+    refreshPtyStatuses: () => {
+      const { ptyStatus } = get()
+      const now = Date.now()
+      const next: Record<string, PtyStatus> = {}
+      let changed = false
+
+      for (const [cardId, current] of Object.entries(ptyStatus)) {
+        const status = computeStatus(cardId, current !== 'stopped', now)
+        next[cardId] = status
+        if (status !== current) changed = true
+      }
+
+      if (changed) set({ ptyStatus: next })
+    },
+
+    loadBranches: async () => {
+      const cwds = [...new Set(Object.values(get().board.cards).map((c) => c.cwd))]
+      // 用 allSettled 而非 all：單一目錄讀取失敗不該讓整個看板的 branch 都消失
+      const results = await Promise.allSettled(
+        cwds.map(async (cwd) => [cwd, await window.gc.git.branch(cwd)] as const),
+      )
+      const entries: Array<readonly [string, string | null]> = []
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          entries.push(result.value)
+        } else {
+          console.warn('[app-store] 讀取單一目錄的 branch 失敗，該卡片暫不顯示 branch', {
+            err: result.reason,
+          })
+        }
+      }
+      set({ branches: Object.fromEntries(entries) })
+    },
 
     startPty: async (cardId) => {
       const card = get().board.cards[cardId]

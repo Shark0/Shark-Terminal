@@ -32,6 +32,7 @@ const EMPTY_BOARD: Board = { version: 1, columns: [], cards: {} }
 const gc = {
   board: { load: vi.fn(), save: vi.fn() },
   pty: { kill: vi.fn() },
+  git: { branch: vi.fn() },
 }
 
 vi.stubGlobal('window', { gc })
@@ -40,6 +41,7 @@ beforeEach(() => {
   gc.board.load.mockReset()
   gc.board.save.mockReset()
   gc.pty.kill.mockReset()
+  gc.git.branch.mockReset()
   // zustand store 在測試間必須重置，避免前一個測試的 board/activeCardId 汙染下一個測試
   useAppStore.setState({
     board: EMPTY_BOARD,
@@ -47,6 +49,7 @@ beforeEach(() => {
     loaded: false,
     recoveryNotice: null,
     ptyStatus: {},
+    branches: {},
   })
 })
 
@@ -75,6 +78,59 @@ describe('loadBoard', () => {
     expect(errorSpy).toHaveBeenCalled()
 
     errorSpy.mockRestore()
+  })
+
+  it('併發呼叫時共用同一個 in-flight promise，只觸發一次 window.gc.board.load', async () => {
+    let resolveLoad: (value: { board: Board; recoveredFrom: string | null }) => void = () => {}
+    const pending = new Promise<{ board: Board; recoveredFrom: string | null }>((resolve) => {
+      resolveLoad = resolve
+    })
+    gc.board.load.mockReturnValue(pending)
+    const board = fixtureBoard()
+
+    // 模擬 React StrictMode 讓 effect 跑兩次的情境：第二次呼叫在第一次尚未 resolve 時發生
+    const p1 = useAppStore.getState().loadBoard()
+    const p2 = useAppStore.getState().loadBoard()
+
+    expect(gc.board.load).toHaveBeenCalledTimes(1)
+    expect(p1).toBe(p2)
+
+    resolveLoad({ board, recoveredFrom: null })
+    await p1
+
+    const state = useAppStore.getState()
+    expect(state.board).toEqual(board)
+    expect(state.loaded).toBe(true)
+  })
+})
+
+describe('loadBranches', () => {
+  it('單一 cwd 讀取失敗時，其他 cwd 的 branch 仍然正常寫入', async () => {
+    let board = createDefaultBoard(seqId('col'))
+    board = reducerAddCard(
+      board,
+      'col_0',
+      newCard({ title: 'card_ok', cwd: '/tmp/ok', command: 'claude' }, 'card_ok', NOW),
+    )
+    board = reducerAddCard(
+      board,
+      'col_0',
+      newCard({ title: 'card_fail', cwd: '/tmp/fail', command: 'claude' }, 'card_fail', NOW),
+    )
+    useAppStore.setState({ board })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    gc.git.branch.mockImplementation(async (cwd: string) => {
+      if (cwd === '/tmp/fail') throw new Error('讀取失敗')
+      return 'main'
+    })
+
+    await useAppStore.getState().loadBranches()
+
+    expect(useAppStore.getState().branches).toEqual({ '/tmp/ok': 'main' })
+    expect(warnSpy).toHaveBeenCalled()
+
+    warnSpy.mockRestore()
   })
 })
 
