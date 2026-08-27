@@ -199,3 +199,82 @@ describe('BoardStore.save', () => {
     expect((await fs.readdir(root)).filter((f) => f.endsWith('.tmp'))).toEqual([])
   })
 })
+
+describe('BoardStore 唯讀模式與清理失敗', () => {
+  const DEBOUNCE = 10
+
+  it('load() 遇到非 ENOENT 錯誤時不覆寫原檔，並進入唯讀模式', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const original = sampleBoard()
+    await fs.writeFile(file, JSON.stringify(original))
+    await fs.chmod(file, 0o000)
+
+    try {
+      const store = new BoardStore(file, seqId('col'))
+      const { board, recoveredFrom } = await store.load()
+
+      expect(board.columns.map((c) => c.title)).toEqual(['需求評估中', '開發中', 'Review 中', '等待 Merge'])
+      expect(recoveredFrom).toBeNull()
+      expect(error).toHaveBeenCalled()
+    } finally {
+      await fs.chmod(file, 0o644)
+    }
+
+    const untouched = JSON.parse(await fs.readFile(file, 'utf8')) as Board
+    expect(untouched).toEqual(original)
+
+    error.mockRestore()
+  })
+
+  it('唯讀模式下 save() 不會寫檔', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const original = sampleBoard()
+    await fs.writeFile(file, JSON.stringify(original))
+    await fs.chmod(file, 0o000)
+
+    const store = new BoardStore(file, seqId('col'), DEBOUNCE)
+    try {
+      await store.load()
+      store.save(sampleBoard())
+      await store.flush()
+    } finally {
+      await fs.chmod(file, 0o644)
+    }
+
+    const untouched = JSON.parse(await fs.readFile(file, 'utf8')) as Board
+    expect(untouched).toEqual(original)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('唯讀模式'),
+      expect.objectContaining({ filePath: file }),
+    )
+
+    error.mockRestore()
+    warn.mockRestore()
+  })
+
+  it('writeAtomic 清理暫存檔失敗時不會拋出', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const rm = vi.spyOn(fs, 'rm').mockRejectedValue(new Error('清理失敗'))
+
+    // 讓寫入路徑本身失敗：filePath 的上層目錄其實是一個檔案，mkdir 必定失敗
+    await fs.writeFile(path.join(root, 'notadir'), 'x')
+    const badFile = path.join(root, 'notadir', 'sub', 'board.json')
+
+    const store = new BoardStore(badFile, seqId('col'), DEBOUNCE)
+    store.save(sampleBoard())
+
+    await expect(store.flush()).resolves.toBeUndefined()
+
+    expect(error).toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('清理暫存檔失敗'),
+      expect.objectContaining({ tmp: `${badFile}.tmp` }),
+    )
+
+    rm.mockRestore()
+    error.mockRestore()
+    warn.mockRestore()
+  })
+})
