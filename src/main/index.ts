@@ -42,6 +42,11 @@ function createWindow(): void {
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
+    // dev 模式把 renderer 的 console 轉印到 main 的 stdout，
+    // 否則在沒有 GUI 的環境完全看不到 renderer 端的錯誤
+    mainWindow.webContents.on('console-message', (details) => {
+      console.log(`[renderer:${details.level}] ${details.message}  (${details.sourceId}:${details.lineNumber})`)
+    })
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
     void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
@@ -73,6 +78,9 @@ app.on('before-quit', (event) => {
     } catch (err) {
       console.error('[main] 結束前清理失敗，仍繼續關閉', { err })
     }
-    app.quit()
+    // 用 app.exit() 直接結束，避免再次觸發 before-quit——
+    // 若改用 app.quit()，使用者在 flush/killAll 跑完前又按一次 ⌘Q 時，
+    // 第二次 before-quit 不會被攔截，有機會搶在清理完成前真的退出
+    app.exit()
   })()
 })

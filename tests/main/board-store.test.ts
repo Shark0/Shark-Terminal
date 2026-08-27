@@ -23,6 +23,11 @@ function seqId(prefix: string): () => string {
   return () => `${prefix}_${n++}`
 }
 
+/** 供組合 tmp 檔名正則時跳脫路徑中的正則特殊字元 */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function sampleBoard(): Board {
   const board = createDefaultBoard(seqId('col'))
   const card = newCard({ title: 'T', cwd: '/tmp', command: 'claude' }, 'card_1', '2026-08-27T00:00:00.000Z')
@@ -270,7 +275,8 @@ describe('BoardStore 唯讀模式與清理失敗', () => {
     expect(error).toHaveBeenCalled()
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('清理暫存檔失敗'),
-      expect.objectContaining({ tmp: `${badFile}.tmp` }),
+      // tmp 檔名帶 pid 與遞增序號（見 writeAtomic），只驗證前綴與副檔名
+      expect.objectContaining({ tmp: expect.stringMatching(new RegExp(`^${escapeRegExp(badFile)}\\.\\d+\\.\\d+\\.tmp$`)) }),
     )
 
     rm.mockRestore()

@@ -77,6 +77,8 @@ export class BoardStore {
   private pending: Board | null = null
   /** 讀檔失敗且原檔可能存在時進入唯讀，避免後續寫入覆蓋掉讀不到的原檔 */
   private readOnly = false
+  /** tmp 檔名遞增序號，同一毫秒內的併發呼叫也不會撞名（Date.now() 沒有這個保證） */
+  private tmpSeq = 0
 
   constructor(
     private readonly filePath: string,
@@ -152,9 +154,12 @@ export class BoardStore {
     await this.writeAtomic(board)
   }
 
-  /** 先寫 .tmp 再 rename——rename 是原子操作，避免寫到一半中斷造成半截 JSON */
+  /**
+   * 先寫 .tmp 再 rename——rename 是原子操作，避免寫到一半中斷造成半截 JSON。
+   * tmp 檔名帶 pid 與遞增序號，避免併發呼叫（例如 renderer 端短時間內觸發兩次 load）搶同一個檔名造成 rename 競態。
+   */
   private async writeAtomic(board: Board): Promise<void> {
-    const tmp = `${this.filePath}.tmp`
+    const tmp = `${this.filePath}.${process.pid}.${this.tmpSeq++}.tmp`
     try {
       await fs.mkdir(path.dirname(this.filePath), { recursive: true })
       await fs.writeFile(tmp, JSON.stringify(board, null, 2), 'utf8')

@@ -9,7 +9,14 @@ export function registerIpc(
   ptyManager: PtyManager,
   getWindow: () => BrowserWindow | null,
 ): void {
-  ipcMain.handle('board:load', () => store.load())
+  ipcMain.handle('board:load', async () => {
+    try {
+      return await store.load()
+    } catch (err) {
+      console.error('[ipc] board:load 失敗', { err })
+      throw err
+    }
+  })
   ipcMain.handle('board:save', (_event, board: Board) => {
     store.save(board)
   })
@@ -17,7 +24,12 @@ export function registerIpc(
   ipcMain.handle(
     'pty:spawn',
     (_event, cardId: string, cwd: string, command: string, cols: number, rows: number) => {
-      ptyManager.spawn(cardId, cwd, command, cols, rows)
+      try {
+        ptyManager.spawn(cardId, cwd, command, cols, rows)
+      } catch (err) {
+        console.error('[ipc] pty:spawn 失敗', { cardId, cwd, command, err })
+        throw err
+      }
     },
   )
   ipcMain.on('pty:write', (_event, cardId: string, data: string) => {
@@ -30,23 +42,38 @@ export function registerIpc(
     ptyManager.kill(cardId)
   })
 
-  ipcMain.handle('git:branch', (_event, cwd: string) => readBranch(cwd))
+  ipcMain.handle('git:branch', async (_event, cwd: string) => {
+    try {
+      return await readBranch(cwd)
+    } catch (err) {
+      console.error('[ipc] git:branch 失敗', { cwd, err })
+      throw err
+    }
+  })
 
   ipcMain.handle('dialog:pickDirectory', async () => {
-    const win = getWindow()
-    const options = { properties: ['openDirectory' as const, 'createDirectory' as const] }
-    const result = win
-      ? await dialog.showOpenDialog(win, options)
-      : await dialog.showOpenDialog(options)
-    if (result.canceled || result.filePaths.length === 0) return null
-    return result.filePaths[0]
+    try {
+      const win = getWindow()
+      const options = { properties: ['openDirectory' as const, 'createDirectory' as const] }
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options)
+      if (result.canceled || result.filePaths.length === 0) return null
+      return result.filePaths[0]
+    } catch (err) {
+      console.error('[ipc] dialog:pickDirectory 失敗', { err })
+      throw err
+    }
   })
 
   // pty 的輸出與結束事件推給 renderer
   ptyManager.onData((cardId, data) => {
-    getWindow()?.webContents.send('pty:data', cardId, data)
+    const win = getWindow()
+    // webContents 會在 'closed' 事件之前就被銷毀，只檢查 null 擋不住這段時間差
+    if (win && !win.isDestroyed()) win.webContents.send('pty:data', cardId, data)
   })
   ptyManager.onExit((cardId, exitCode) => {
-    getWindow()?.webContents.send('pty:exit', cardId, exitCode)
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('pty:exit', cardId, exitCode)
   })
 }
