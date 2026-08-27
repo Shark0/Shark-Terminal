@@ -1685,7 +1685,8 @@ export class BoardStore {
 
   /** 先寫 .tmp 再 rename——rename 是原子操作，避免寫到一半中斷造成半截 JSON */
   private async writeAtomic(board: Board): Promise<void> {
-    const tmp = `${this.filePath}.tmp`
+    // 檔名帶 pid 與時間戳：併發寫入若共用同一個 tmp，較慢的一次 rename 會得到 ENOENT
+    const tmp = `${this.filePath}.${process.pid}.${Date.now()}.tmp`
     try {
       await fs.mkdir(path.dirname(this.filePath), { recursive: true })
       await fs.writeFile(tmp, JSON.stringify(board, null, 2), 'utf8')
@@ -2199,7 +2200,16 @@ export function registerIpc(
   ptyManager: PtyManager,
   getWindow: () => BrowserWindow | null,
 ): void {
-  ipcMain.handle('board:load', () => store.load())
+  // 四個 invoke handler 都補上 main 端的診斷紀錄後再 rethrow：
+  // 未捕捉的例外只會變成 renderer 端的 rejected promise，main 端不留任何線索。
+  ipcMain.handle('board:load', async () => {
+    try {
+      return await store.load()
+    } catch (err) {
+      console.error('[ipc] board:load 失敗', { err })
+      throw err
+    }
+  })
   ipcMain.handle('board:save', (_event, board: Board) => {
     store.save(board)
   })
@@ -2207,7 +2217,12 @@ export function registerIpc(
   ipcMain.handle(
     'pty:spawn',
     (_event, cardId: string, cwd: string, command: string, cols: number, rows: number) => {
-      ptyManager.spawn(cardId, cwd, command, cols, rows)
+      try {
+        ptyManager.spawn(cardId, cwd, command, cols, rows)
+      } catch (err) {
+        console.error('[ipc] pty:spawn 失敗', { cardId, cwd, command, err })
+        throw err
+      }
     },
   )
   ipcMain.on('pty:write', (_event, cardId: string, data: string) => {
@@ -2220,7 +2235,14 @@ export function registerIpc(
     ptyManager.kill(cardId)
   })
 
-  ipcMain.handle('git:branch', (_event, cwd: string) => readBranch(cwd))
+  ipcMain.handle('git:branch', async (_event, cwd: string) => {
+    try {
+      return await readBranch(cwd)
+    } catch (err) {
+      console.error('[ipc] git:branch 失敗', { cwd, err })
+      throw err
+    }
+  })
 
   ipcMain.handle('dialog:pickDirectory', async () => {
     const win = getWindow()
@@ -2232,12 +2254,17 @@ export function registerIpc(
     return result.filePaths[0]
   })
 
-  // pty 的輸出與結束事件推給 renderer
+  // pty 的輸出與結束事件推給 renderer。
+  // webContents 會在視窗的 'closed' 事件「之前」就被銷毀，此時 mainWindow 仍非 null，
+  // 只用 ?. 擋不住——對已銷毀的 webContents 呼叫 send 會同步拋例外，
+  // 在 pty 的 data callback 中拋出會讓 main 程序崩潰而跳過 before-quit 的存檔。
   ptyManager.onData((cardId, data) => {
-    getWindow()?.webContents.send('pty:data', cardId, data)
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('pty:data', cardId, data)
   })
   ptyManager.onExit((cardId, exitCode) => {
-    getWindow()?.webContents.send('pty:exit', cardId, exitCode)
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('pty:exit', cardId, exitCode)
   })
 }
 ```
@@ -2322,7 +2349,9 @@ app.on('before-quit', (event) => {
     } catch (err) {
       console.error('[main] 結束前清理失敗，仍繼續關閉', { err })
     }
-    app.quit()
+    // 用 exit 而非 quit：quit 會再次觸發 before-quit，若使用者連按兩次 ⌘Q，
+    // 第二次因 cleaningUp 已為 true 而不攔截，可能搶在 flush 完成前退出
+    app.exit()
   })()
 })
 ```
