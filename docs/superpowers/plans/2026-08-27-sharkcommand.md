@@ -1758,7 +1758,7 @@ git commit -m "feat: board.json 持久化
     - `spawn(cardId: string, cwd: string, command: string, cols: number, rows: number): void`
     - `write(cardId: string, data: string): void`
     - `resize(cardId: string, cols: number, rows: number): void`
-    - `kill(cardId: string): void`
+    - `kill(cardId: string): void` — 只送 SIGKILL，Map 移除與 exit 廣播交給 onExit handler
     - `killAll(timeoutMs?: number): Promise<void>`
     - `has(cardId: string): boolean`
     - `onData(cb: (cardId: string, data: string) => void): void`
@@ -2083,7 +2083,9 @@ export class PtyManager {
       console.warn('[pty-manager] kill 找不到對應的 pty，可能已結束或 cardId 有誤', { cardId })
       return
     }
-    this.ptys.delete(cardId)
+    // 不在這裡從 Map 移除：移除與 exit 廣播統一由 onExit handler 處理。
+    // 若先 delete，onExit 的持有者比對會因 Map 已無此 cardId 而必然失敗，
+    // 導致主動 kill 的 pty 永遠不會廣播 exit 事件。
     try {
       pty.kill('SIGKILL')
     } catch (err) {
@@ -2339,7 +2341,12 @@ app.on('window-all-closed', () => {
 // 結束前先把待寫入的看板落地，再關掉所有 pty
 let cleaningUp = false
 app.on('before-quit', (event) => {
-  if (cleaningUp) return
+  if (cleaningUp) {
+    // 清理進行中一律攔截，退出交給完成後的 app.exit()；
+    // 否則使用者連按 ⌘Q 會搶在 flush 寫完之前退出
+    event.preventDefault()
+    return
+  }
   event.preventDefault()
   cleaningUp = true
   void (async () => {
