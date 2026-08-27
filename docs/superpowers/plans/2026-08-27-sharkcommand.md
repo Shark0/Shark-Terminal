@@ -4351,14 +4351,23 @@ import { clearActivity, computeStatus } from './pty-activity'
 
     loadBranches: async () => {
       const cwds = [...new Set(Object.values(get().board.cards).map((c) => c.cwd))]
-      try {
-        const entries = await Promise.all(
-          cwds.map(async (cwd) => [cwd, await window.gc.git.branch(cwd)] as const),
-        )
-        set({ branches: Object.fromEntries(entries) })
-      } catch (err) {
-        console.warn('[app-store] 讀取 branch 失敗，卡片將不顯示 branch', { err })
+      // 用 allSettled 而非 all：單一目錄讀取失敗不該讓整個看板的 branch 都消失。
+      // git.ts 目前對所有可預期錯誤都回傳 null 不外拋，但那是它的實作細節，
+      // 這一層不該依賴它永遠不拋。
+      const results = await Promise.allSettled(
+        cwds.map(async (cwd) => [cwd, await window.gc.git.branch(cwd)] as const),
+      )
+      const entries: Array<readonly [string, string | null]> = []
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          entries.push(result.value)
+        } else {
+          console.warn('[app-store] 讀取單一目錄的 branch 失敗，該卡片暫不顯示 branch', {
+            err: result.reason,
+          })
+        }
       }
+      set({ branches: Object.fromEntries(entries) })
     },
 ```
 
