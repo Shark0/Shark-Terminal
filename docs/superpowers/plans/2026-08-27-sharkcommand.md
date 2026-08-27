@@ -111,7 +111,7 @@ tests/
 **Files:**
 - Create: `package.json`, `electron.vite.config.ts`, `vitest.config.ts`
 - Create: `tsconfig.json`, `tsconfig.node.json`
-- Create: `tailwind.config.js`, `postcss.config.js`
+- Create: `tailwind.config.mjs`, `postcss.config.mjs`
 - Create: `src/shared/types.ts`, `src/shared/factory.ts`
 - Create: `src/main/index.ts`, `src/preload/index.ts`
 - Create: `src/renderer/index.html`, `src/renderer/main.tsx`, `src/renderer/App.tsx`, `src/renderer/styles/index.css`
@@ -270,7 +270,7 @@ export default defineConfig({
 
 測試檔會 import `src/renderer/` 底下的純邏輯模組（Task 2 的 reducer、Task 10 的 pty-activity、Task 11 的 fuzzy）。這些模組不碰 DOM，在 node 設定下型別檢查通過沒有問題。
 
-`tailwind.config.js` — 視覺 token 集中在此，後續 UI 任務一律引用這些名稱，不寫死色碼：
+`tailwind.config.mjs` — 視覺 token 集中在此，後續 UI 任務一律引用這些名稱，不寫死色碼：
 
 ```js
 export default {
@@ -299,7 +299,7 @@ export default {
 }
 ```
 
-`postcss.config.js`：
+`postcss.config.mjs`：
 
 ```js
 export default { plugins: { tailwindcss: {}, autoprefixer: {} } }
