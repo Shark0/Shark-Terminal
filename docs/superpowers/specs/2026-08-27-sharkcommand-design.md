@@ -80,7 +80,7 @@ SharkCommand 是一個 macOS 桌面應用，用看板的二維佈局取代終端
 
 **寫檔 debounce 500ms。** 拖拉過程中 state 每幀變動，不 debounce 會狂寫磁碟。
 
-**JSON 損毀時的容錯**：讀取失敗或格式驗證不過時，不可讓 app 開不起來。行為是備份原檔為 `board.json.corrupt-<timestamp>`，以空白看板啟動，並在 UI 顯示提示。
+**JSON 損毀時的容錯**：讀取失敗或格式驗證不過時，不可讓 app 開不起來。行為是備份原檔為 `board.json.corrupt-<timestamp>`，回退成預設看板，並在 UI 顯示一則可關閉的提示，告知備份檔位置。
 
 ### 初次啟動與欄位顏色
 
