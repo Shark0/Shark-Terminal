@@ -79,6 +79,13 @@ describe('deleteCard', () => {
     expect(b.cards.card_a).toBeUndefined()
     expect(idsOf(b, 'col_0')).toEqual(['card_b'])
   })
+
+  it('卡片不存在時原樣回傳', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const before = fixture()
+    expect(deleteCard(before, 'card_nope')).toBe(before)
+    warn.mockRestore()
+  })
 })
 
 describe('moveCard', () => {
@@ -147,6 +154,13 @@ describe('addColumn / updateColumn', () => {
     expect(column?.color).toBe('#f778ba')
     expect(column?.cardIds).toEqual(['card_c'])
   })
+
+  it('updateColumn：欄位不存在時原樣回傳', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const before = fixture()
+    expect(updateColumn(before, 'col_nope', { title: 'x' })).toBe(before)
+    warn.mockRestore()
+  })
 })
 
 describe('deleteColumn', () => {
@@ -162,6 +176,15 @@ describe('deleteColumn', () => {
   it('刪除空欄時 removedCardIds 為空陣列', () => {
     const { removedCardIds } = deleteColumn(fixture(), 'col_2')
     expect(removedCardIds).toEqual([])
+  })
+
+  it('欄位不存在時原樣回傳，removedCardIds 為空陣列', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const before = fixture()
+    const result = deleteColumn(before, 'col_nope')
+    expect(result.board).toBe(before)
+    expect(result.removedCardIds).toEqual([])
+    warn.mockRestore()
   })
 })
 
@@ -179,6 +202,23 @@ describe('moveColumn', () => {
   it('欄位隨身帶著自己的卡片', () => {
     const b = moveColumn(fixture(), 'col_0', 3)
     expect(idsOf(b, 'col_0')).toEqual(['card_a', 'card_b'])
+  })
+
+  it('欄位不存在時原樣回傳', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const before = fixture()
+    expect(moveColumn(before, 'col_nope', 0)).toBe(before)
+    warn.mockRestore()
+  })
+
+  it('toIndex 超出上界時 clamp 到末端', () => {
+    const b = moveColumn(fixture(), 'col_0', 99)
+    expect(b.columns.map((c) => c.id)).toEqual(['col_1', 'col_2', 'col_3', 'col_0'])
+  })
+
+  it('toIndex 為負數時 clamp 到開頭', () => {
+    const b = moveColumn(fixture(), 'col_0', -5)
+    expect(b.columns.map((c) => c.id)).toEqual(['col_0', 'col_1', 'col_2', 'col_3'])
   })
 })
 
