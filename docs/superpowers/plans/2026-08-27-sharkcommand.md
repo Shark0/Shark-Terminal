@@ -2576,20 +2576,34 @@ export const useAppStore = create<AppState>((set, get) => {
     void window.gc.board.save(board)
   }
 
+  /**
+   * 進行中的載入。併發呼叫共用同一個 Promise，避免較晚 resolve 的那次
+   * 用出發時的舊快照 set 整個 board，把期間的所有變更抹掉
+   * （React StrictMode 會讓 effect 跑兩次，正是這個情境）。
+   */
+  let loading: Promise<void> | null = null
+
   return {
     board: EMPTY_BOARD,
     activeCardId: null,
     loaded: false,
     recoveryNotice: null,
 
-    loadBoard: async () => {
-      try {
-        const { board, recoveredFrom } = await window.gc.board.load()
-        set({ board, loaded: true, recoveryNotice: recoveredFrom })
-      } catch (err) {
-        console.error('[app-store] 載入看板失敗，改用空白看板', { err })
-        set({ board: EMPTY_BOARD, loaded: true })
-      }
+    loadBoard: () => {
+      if (loading) return loading
+      loading = (async () => {
+        try {
+          const { board, recoveredFrom } = await window.gc.board.load()
+          set({ board, loaded: true, recoveryNotice: recoveredFrom })
+        } catch (err) {
+          console.error('[app-store] 載入看板失敗，改用空白看板', { err })
+          set({ board: EMPTY_BOARD, loaded: true })
+        } finally {
+          // 完成後釋放，讓測試之間不互相干擾，也保留未來「重新載入」的可能
+          loading = null
+        }
+      })()
+      return loading
     },
 
     setActiveCard: (cardId) => set({ activeCardId: cardId }),
@@ -4373,10 +4387,12 @@ import { clearActivity, computeStatus } from './pty-activity'
 ```tsx
 import type { PtyStatus } from '@shared/types'
 
-const STYLE: Record<PtyStatus, { color: string; label: string; breathe: boolean }> = {
-  running: { color: '#3fb950', label: '執行中', breathe: true },
-  idle: { color: '#d29922', label: '閒置', breathe: false },
-  stopped: { color: '#6e7681', label: '已停止', breathe: false },
+// 用 Tailwind token 而非 inline hex：全域約束禁止寫死色碼。
+// 必須是完整的靜態字串（不可寫成 `bg-${status}`），否則 JIT 掃不到、class 不會被產生。
+const STYLE: Record<PtyStatus, { className: string; label: string; breathe: boolean }> = {
+  running: { className: 'bg-running', label: '執行中', breathe: true },
+  idle: { className: 'bg-idle', label: '閒置', breathe: false },
+  stopped: { className: 'bg-stopped', label: '已停止', breathe: false },
 }
 
 interface Props {
@@ -4389,8 +4405,7 @@ export default function StatusDot({ status }: Props): JSX.Element {
   return (
     <span
       title={status === undefined ? '尚未啟動' : style.label}
-      style={{ backgroundColor: style.color }}
-      className={`inline-block h-2 w-2 shrink-0 rounded-full ${style.breathe ? 'animate-breathe' : ''}`}
+      className={`inline-block h-2 w-2 shrink-0 rounded-full ${style.className} ${style.breathe ? 'animate-breathe' : ''}`}
     />
   )
 }
