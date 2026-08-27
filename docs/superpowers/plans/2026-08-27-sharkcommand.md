@@ -532,7 +532,7 @@ export function createDefaultBoard(genId: () => string): Board {
 - [ ] **Step 8: 執行測試，確認通過**
 
 Run: `npm test`
-Expected: PASS — 8 個測試全綠
+Expected: PASS — 9 個測試全綠
 
 - [ ] **Step 9: 建立最小可執行的 Electron 骨架**
 
@@ -1048,7 +1048,7 @@ export function moveColumn(board: Board, columnId: string, toIndex: number): Boa
 - [ ] **Step 4: 執行測試，確認通過**
 
 Run: `npm test`
-Expected: PASS — Task 1 的 8 個加上本任務 22 個測試全綠
+Expected: PASS — Task 1 的 9 個加上本任務 22 個測試全綠
 
 - [ ] **Step 5: Commit**
 
@@ -2083,7 +2083,7 @@ export class PtyManager {
 - [ ] **Step 4: 執行測試，確認通過**
 
 Run: `npm test`
-Expected: PASS — 累計 4 個測試檔全綠
+Expected: PASS — 累計 5 個測試檔全綠（factory、board-reducer、git、board-store、pty-manager）
 
 - [ ] **Step 5: Commit**
 
@@ -3632,7 +3632,7 @@ export function fitAndSync(cardId: string): void {
 
 - [ ] **Step 2: store 新增 pty 狀態與 action**
 
-在 `src/renderer/store/app-store.ts` 頂端補上 import：
+在 `src/renderer/store/app-store.ts` 頂端，把既有的 `import type { Board } from '@shared/types'` **改成**下面第一行（不是另外新增一行，否則會重複 import），並新增第二行：
 
 ```ts
 import type { Board, PtyStatus } from '@shared/types'
@@ -4524,7 +4524,7 @@ Expected: PASS — 7 個測試全綠
 `src/renderer/CommandPalette.tsx`：
 
 ```tsx
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Card } from '@shared/types'
 import StatusDot from './board/StatusDot'
 import { shortenPath } from './board/CardItem'
@@ -4543,7 +4543,6 @@ export default function CommandPalette({ open, onClose, home }: Props): JSX.Elem
   const setActiveCard = useAppStore((s) => s.setActiveCard)
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
-  const listRef = useRef<HTMLDivElement>(null)
 
   /** 依看板順序列出卡片，並附上所屬欄位名稱 */
   const rows = useMemo(() => {
@@ -4607,7 +4606,7 @@ export default function CommandPalette({ open, onClose, home }: Props): JSX.Elem
           className="w-full border-b border-line bg-column px-4 py-3 text-[14px] text-fg outline-none"
         />
 
-        <div ref={listRef} className="max-h-[320px] overflow-y-auto">
+        <div className="max-h-[320px] overflow-y-auto">
           {rows.length === 0 ? (
             <div className="px-4 py-6 text-center text-[12px] text-fg-dim">沒有符合的卡片</div>
           ) : (
