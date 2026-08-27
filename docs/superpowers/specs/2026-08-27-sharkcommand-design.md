@@ -35,7 +35,7 @@ SharkCommand 是一個 macOS 桌面應用，用看板的二維佈局取代終端
 | 狀態 | zustand | 拖拉高頻更新，避免 Context 整棵樹重繪 |
 | 樣式 | Tailwind + 獨立 CSS（xterm 客製） | 與既有技術棧一致；xterm 的 DOM 由函式庫產生，其客製走獨立 CSS |
 | 測試 | Vitest | 與 Vite 建置共用設定，純函式測試啟動快 |
-| 打包 | electron-builder | universal binary → `.dmg` |
+| 打包 | electron-builder | arm64 與 x64 各一包 `.dmg`（見下方說明） |
 
 ### 被否決的方案
 
@@ -224,7 +224,11 @@ GUI 加子程序的應用，E2E 投報率低。策略是**測純邏輯，UI 手�
 
 ## 7. 分發
 
-**打包**：`electron-builder` 產出 **universal binary** 的 `.dmg`。在 Apple Silicon 上打包出的 arm64 版本，Intel Mac 無法執行，因此 universal 設定從專案初期就配好。`node-pty` 為 native addon，electron-builder 會將編譯好的 binary 一併打包，接收者無需安裝 Xcode Command Line Tools。
+**打包**：`electron-builder` **分別產出 arm64 與 x64 兩個 `.dmg`**。
+
+原本規劃的是單一 universal binary，實作時證實不可行：`node-pty` 的跨架構 prebuild 在 lipo 合併階段衝突。這是 native module 的已知限制，不是設定錯誤（build log 中沒有 Node 版本相關的 EBADENGINE 錯誤）。兩包功能完全相同，代價僅是分發時接收者要選對架構，README 已說明。強求 universal 需自行編譯 `node-pty` 或等上游修復，成本遠高於收益。
+
+`node-pty` 為 native addon，以 `asarUnpack` 解壓在 asar 之外，接收者無需安裝 Xcode Command Line Tools。
 
 **Gatekeeper**：未經 Apple 簽名的 app，首次開啟會被擋下並顯示「無法驗證開發者」。README 須寫明解法：
 
@@ -247,7 +251,7 @@ xattr -dr com.apple.quarantine /Applications/SharkCommand.app
 - git branch 顯示
 - ⌘K 快速跳轉
 - `board.json` 持久化與損毀容錯
-- electron-builder 打包 universal `.dmg`
+- electron-builder 打包 `.dmg`（arm64 與 x64 各一包）
 
 ### 明確排除至 v2
 

@@ -22,7 +22,7 @@
 - **pty 關閉流程**：SIGTERM → 等 500ms → SIGKILL
 - **xterm scrollback**：5000 行
 - **過場動畫**：≤150ms（狀態燈呼吸動畫 2s 週期不受此限）
-- **打包**：electron-builder 產出 universal binary `.dmg`
+- **打包**：electron-builder 產出 `.dmg`（原規劃 universal，實作證實 node-pty 的跨架構 prebuild 在 lipo 合併衝突，改為 arm64 與 x64 各一包）
 - **錯誤記錄**：所有 catch block、以及 `switch` / `if-else` 的 fallback 分支，必須以 `console.warn` 或 `console.error` 記錄上下文，訊息格式 `[模組名] 繁體中文說明`，並帶上原始 error
 
 ## 視覺 Token（所有 UI 任務共用）
@@ -102,7 +102,7 @@ tests/
 | 8 | 拖拉 | 卡片跨欄、卡片重排、欄位重排 |
 | 9 | 終端機面板 + Splitter | 點卡片可啟動 Claude 並正常互動 |
 | 10 | 狀態燈 + git branch 顯示 | 卡片顯示 running/idle/stopped 與 branch |
-| 11 | ⌘K + 打包 + README | 產出可分發的 universal `.dmg` |
+| 11 | ⌘K + 打包 + README | 產出可分發的 `.dmg`（arm64 / x64 各一包） |
 
 ---
 
@@ -145,7 +145,7 @@ tests/
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "build:mac": "npm run build && electron-builder --mac --universal",
+    "build:mac": "npm run build && electron-builder --mac",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
