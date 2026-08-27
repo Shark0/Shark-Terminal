@@ -68,7 +68,12 @@ app.on('window-all-closed', () => {
 // 結束前先把待寫入的看板落地，再關掉所有 pty
 let cleaningUp = false
 app.on('before-quit', (event) => {
-  if (cleaningUp) return
+  if (cleaningUp) {
+    // 清理進行中：一律攔截，退出完全交給清理完成後的 app.exit()，
+    // 否則使用者連按 ⌘Q 會搶在 flush 寫完之前退出
+    event.preventDefault()
+    return
+  }
   event.preventDefault()
   cleaningUp = true
   void (async () => {

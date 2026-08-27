@@ -92,10 +92,11 @@ export class PtyManager {
   kill(cardId: string): void {
     const pty = this.ptys.get(cardId)
     if (!pty) {
-      console.warn('[pty-manager] kill 找不到對應的 pty，忽略此次操作', { cardId })
+      console.warn('[pty-manager] kill 找不到對應的 pty，可能已結束或 cardId 有誤', { cardId })
       return
     }
-    this.ptys.delete(cardId)
+    // 不在這裡從 Map 移除：移除與 exit 廣播統一由 onExit handler 處理，
+    // 否則身分比對會因為 Map 已無此 cardId 而失敗，導致主動 kill 永遠不廣播 exit
     try {
       pty.kill('SIGKILL')
     } catch (err) {

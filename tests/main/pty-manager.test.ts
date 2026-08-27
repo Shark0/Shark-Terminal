@@ -195,13 +195,28 @@ describe('事件廣播', () => {
 })
 
 describe('kill', () => {
-  it('kill 送 SIGKILL 並自 Map 移除', () => {
+  it('kill 送出 SIGKILL', () => {
     const { created, manager } = setup()
     manager.spawn('card_a', '/tmp', 'claude', 80, 24)
     manager.kill('card_a')
 
     expect(created[0].killed).toContain('SIGKILL')
+    // 程序尚未死透，刻意不在這裡從 Map 移除——移除與廣播統一交給 onExit handler
+    expect(manager.has('card_a')).toBe(true)
+  })
+
+  it('kill 之後 pty 回報 exit 時，自 Map 移除並廣播', () => {
+    const { created, manager } = setup()
+    const onExit = vi.fn()
+    manager.onExit(onExit)
+    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+
+    manager.kill('card_a')
+    created[0].emitExit(0)
+
     expect(manager.has('card_a')).toBe(false)
+    expect(onExit).toHaveBeenCalledTimes(1)
+    expect(onExit).toHaveBeenCalledWith('card_a', 0)
   })
 
   it('對不存在的 cardId 會記錄警告', () => {
