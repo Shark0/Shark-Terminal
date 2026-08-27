@@ -69,6 +69,7 @@ describe('updateCard', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const before = fixture()
     expect(updateCard(before, 'card_nope', { title: 'x' }, LATER)).toBe(before)
+    expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
 })
@@ -84,6 +85,7 @@ describe('deleteCard', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const before = fixture()
     expect(deleteCard(before, 'card_nope')).toBe(before)
+    expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
 })
@@ -130,6 +132,7 @@ describe('moveCard', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const before = fixture()
     expect(moveCard(before, 'card_nope', 'col_1', 0)).toBe(before)
+    expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
 
@@ -137,6 +140,7 @@ describe('moveCard', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const before = fixture()
     expect(moveCard(before, 'card_a', 'col_nope', 0)).toBe(before)
+    expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
 })
@@ -159,6 +163,7 @@ describe('addColumn / updateColumn', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const before = fixture()
     expect(updateColumn(before, 'col_nope', { title: 'x' })).toBe(before)
+    expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
 })
@@ -184,6 +189,7 @@ describe('deleteColumn', () => {
     const result = deleteColumn(before, 'col_nope')
     expect(result.board).toBe(before)
     expect(result.removedCardIds).toEqual([])
+    expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
 })
@@ -208,6 +214,7 @@ describe('moveColumn', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const before = fixture()
     expect(moveColumn(before, 'col_nope', 0)).toBe(before)
+    expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
 
@@ -217,8 +224,8 @@ describe('moveColumn', () => {
   })
 
   it('toIndex 為負數時 clamp 到開頭', () => {
-    const b = moveColumn(fixture(), 'col_0', -5)
-    expect(b.columns.map((c) => c.id)).toEqual(['col_0', 'col_1', 'col_2', 'col_3'])
+    const b = moveColumn(fixture(), 'col_2', -5)
+    expect(b.columns.map((c) => c.id)).toEqual(['col_2', 'col_0', 'col_1', 'col_3'])
   })
 })
 
