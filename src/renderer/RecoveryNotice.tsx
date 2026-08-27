@@ -1,0 +1,25 @@
+import { useAppStore } from './store/app-store'
+
+/** 看板檔損毀並被回退時顯示，讓使用者知道原始資料還在哪裡 */
+export default function RecoveryNotice(): JSX.Element | null {
+  const notice = useAppStore((s) => s.recoveryNotice)
+  const dismiss = useAppStore((s) => s.dismissRecoveryNotice)
+
+  if (!notice) return null
+
+  return (
+    <div className="flex shrink-0 items-center gap-3 border-b border-line bg-column px-3 py-2 text-[12px]">
+      <span className="min-w-0 flex-1 text-fg">
+        看板檔案損毀，已回退為預設看板。原始內容備份於{' '}
+        <span className="font-mono text-fg-dim">{notice}</span>
+      </span>
+      <button
+        type="button"
+        onClick={dismiss}
+        className="shrink-0 rounded border border-line px-2 py-0.5 text-fg-dim transition-colors hover:text-fg"
+      >
+        知道了
+      </button>
+    </div>
+  )
+}
