@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { Board } from '@shared/types'
+import type { Board, PtyStatus } from '@shared/types'
+import { disposeTerminal, ensureTerminal } from '../terminal/terminal-registry'
 import { newCard, newColumn, pickColumnColor } from '@shared/factory'
 import {
   type CardPatch,
@@ -27,6 +28,8 @@ interface AppState {
   loaded: boolean
   /** 非 null 代表看板檔曾損毀，值為備份檔路徑，供橫幅提示使用 */
   recoveryNotice: string | null
+  /** key 為 cardId；沒有鍵代表從未啟動過 */
+  ptyStatus: Record<string, PtyStatus>
 
   loadBoard: () => Promise<void>
   setActiveCard: (cardId: string | null) => void
@@ -41,6 +44,10 @@ interface AppState {
   updateColumn: (columnId: string, patch: ColumnPatch) => void
   deleteColumn: (columnId: string) => void
   moveColumn: (columnId: string, toIndex: number) => void
+
+  startPty: (cardId: string) => Promise<void>
+  stopPty: (cardId: string) => void
+  setPtyStatus: (cardId: string, status: PtyStatus) => void
 
   /** 拖拉期間更新畫面但不存檔 */
   previewBoard: (board: Board) => void
@@ -64,6 +71,7 @@ export const useAppStore = create<AppState>((set, get) => {
     activeCardId: null,
     loaded: false,
     recoveryNotice: null,
+    ptyStatus: {},
 
     loadBoard: async () => {
       try {
@@ -92,11 +100,17 @@ export const useAppStore = create<AppState>((set, get) => {
       try {
         window.gc.pty.kill(cardId)
       } catch (err) {
-        // kill 失敗不該擋住卡片刪除，否則使用者會看到「按了沒反應」
+        // kill 失敗不該擋住卡片刪除，否則使用者會看到「按了沒反應」且無錯誤訊息
         console.warn('[app-store] 刪除卡片時關閉終端機失敗', { cardId, err })
       }
+      disposeTerminal(cardId)
       const { activeCardId } = get()
       if (activeCardId === cardId) set({ activeCardId: null })
+      set((state) => {
+        const ptyStatus = { ...state.ptyStatus }
+        delete ptyStatus[cardId]
+        return { ptyStatus }
+      })
       persist(deleteCard(get().board, cardId))
     },
 
@@ -117,21 +131,58 @@ export const useAppStore = create<AppState>((set, get) => {
     deleteColumn: (columnId) => {
       const { board, activeCardId } = get()
       const result = deleteColumn(board, columnId)
-      // 欄位連同卡片一起消失，對應的 pty 也要收掉；逐張包 try/catch，
-      // 避免其中一張 kill 失敗就中斷迴圈、導致後面的卡片沒被收掉
+      // 欄位連同卡片一起消失，對應的 pty、xterm 實例與狀態都要收掉。
+      // 逐張包 try/catch 而非整個迴圈包一次：否則第一張失敗就會跳過其餘所有卡片
       for (const cardId of result.removedCardIds) {
         try {
           window.gc.pty.kill(cardId)
         } catch (err) {
           console.warn('[app-store] 刪除欄位時關閉終端機失敗', { columnId, cardId, err })
         }
+        disposeTerminal(cardId)
       }
       if (activeCardId && result.removedCardIds.includes(activeCardId)) set({ activeCardId: null })
+      set((state) => {
+        const ptyStatus = { ...state.ptyStatus }
+        for (const cardId of result.removedCardIds) delete ptyStatus[cardId]
+        return { ptyStatus }
+      })
       persist(result.board)
     },
 
     moveColumn: (columnId, toIndex) => {
       persist(moveColumn(get().board, columnId, toIndex))
+    },
+
+    setPtyStatus: (cardId, status) =>
+      set((state) => {
+        // 卡片已被刪除時，延遲送達的 pty:exit 不該把它的狀態寫回來——
+        // TerminalHost 是用 ptyStatus 的 key 決定要掛載哪些終端機，
+        // 復活的 key 會生出一個永遠看不到也永遠不會被回收的 xterm 實例
+        if (!state.board.cards[cardId]) return state
+        return { ptyStatus: { ...state.ptyStatus, [cardId]: status } }
+      }),
+
+    startPty: async (cardId) => {
+      const card = get().board.cards[cardId]
+      if (!card) {
+        console.warn('[app-store] startPty 找不到卡片', { cardId })
+        return
+      }
+      // 先確保 xterm 存在，才能拿到正確的 cols/rows 開 pty
+      const { term } = ensureTerminal(cardId)
+      try {
+        await window.gc.pty.spawn(cardId, card.cwd, card.command, term.cols, term.rows)
+        get().setPtyStatus(cardId, 'running')
+      } catch (err) {
+        console.error('[app-store] 啟動終端機失敗', { cardId, cwd: card.cwd, err })
+        get().setPtyStatus(cardId, 'stopped')
+      }
+    },
+
+    stopPty: (cardId) => {
+      window.gc.pty.kill(cardId)
+      get().setPtyStatus(cardId, 'stopped')
     },
 
     previewBoard: (board) => set({ board }),

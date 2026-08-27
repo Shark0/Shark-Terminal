@@ -46,6 +46,7 @@ beforeEach(() => {
     activeCardId: null,
     loaded: false,
     recoveryNotice: null,
+    ptyStatus: {},
   })
 })
 
@@ -140,6 +141,27 @@ describe('deleteCard', () => {
   })
 })
 
+describe('setPtyStatus', () => {
+  it('卡片不存在時是 no-op，ptyStatus 完全不變', () => {
+    useAppStore.setState({ board: fixtureBoard(), ptyStatus: { card_a: 'running' }, loaded: true })
+
+    useAppStore.getState().setPtyStatus('card_ghost', 'stopped')
+
+    expect(useAppStore.getState().ptyStatus).toEqual({ card_a: 'running' })
+  })
+
+  it('迴歸：deleteCard 之後，延遲送達的 pty:exit 呼叫 setPtyStatus 不會讓該卡片的狀態復活', () => {
+    useAppStore.setState({ board: fixtureBoard(), ptyStatus: { card_a: 'running' }, loaded: true })
+
+    useAppStore.getState().deleteCard('card_a')
+    // 模擬 main 端稍後才送達的 pty:exit——這時卡片已經不存在於 board.cards，
+    // 若 setPtyStatus 無條件 merge，這裡會讓 ptyStatus.card_a 死灰復燃
+    useAppStore.getState().setPtyStatus('card_a', 'stopped')
+
+    expect(useAppStore.getState().ptyStatus).toEqual({})
+  })
+})
+
 describe('deleteColumn', () => {
   it('對欄內每張卡片呼叫 pty.kill，且 activeCardId 在其中時清空', () => {
     let board = fixtureBoard()
@@ -191,6 +213,25 @@ describe('deleteColumn', () => {
     expect(warnSpy).toHaveBeenCalled()
 
     warnSpy.mockRestore()
+  })
+
+  it('清掉被刪欄位內每張卡片的 ptyStatus，欄位外的卡片不受影響（既不漏刪也不刪多）', () => {
+    let board = fixtureBoard()
+    board = reducerAddCard(
+      board,
+      'col_0',
+      newCard({ title: 'card_b', cwd: '/tmp/b', command: 'claude' }, 'card_b', NOW),
+    )
+    useAppStore.setState({
+      board,
+      activeCardId: null,
+      loaded: true,
+      ptyStatus: { card_a: 'running', card_b: 'idle', card_c: 'running' },
+    })
+
+    useAppStore.getState().deleteColumn('col_0')
+
+    expect(useAppStore.getState().ptyStatus).toEqual({ card_c: 'running' })
   })
 })
 
