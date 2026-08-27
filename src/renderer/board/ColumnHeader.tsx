@@ -5,9 +5,11 @@ import { useAppStore } from '../store/app-store'
 interface Props {
   column: Column
   onAddCard: () => void
+  /** 由 Column 的 useSortable 傳入，只掛在標題上——整欄都可拖會與卡片拖拉打架 */
+  dragHandleProps: Record<string, unknown>
 }
 
-export default function ColumnHeader({ column, onAddCard }: Props): JSX.Element {
+export default function ColumnHeader({ column, onAddCard, dragHandleProps }: Props): JSX.Element {
   const updateColumn = useAppStore((s) => s.updateColumn)
   const deleteColumn = useAppStore((s) => s.deleteColumn)
   const [editing, setEditing] = useState(false)
@@ -42,9 +44,10 @@ export default function ColumnHeader({ column, onAddCard }: Props): JSX.Element 
         ) : (
           <button
             type="button"
+            {...dragHandleProps}
             onDoubleClick={() => setEditing(true)}
-            className="min-w-0 flex-1 truncate text-left text-[13px] font-medium text-fg"
-            title="雙擊可改名"
+            className="min-w-0 flex-1 cursor-grab truncate text-left text-[13px] font-medium text-fg active:cursor-grabbing"
+            title="拖曳可調整欄位順序，雙擊可改名"
           >
             {column.title}
           </button>

@@ -41,6 +41,13 @@ interface AppState {
   updateColumn: (columnId: string, patch: ColumnPatch) => void
   deleteColumn: (columnId: string) => void
   moveColumn: (columnId: string, toIndex: number) => void
+
+  /** 拖拉期間更新畫面但不存檔 */
+  previewBoard: (board: Board) => void
+  /** 拖拉結束，把目前 board 存檔 */
+  commitBoard: () => void
+  /** 取消拖拉，還原成拖拉前的 snapshot */
+  restoreBoard: (board: Board) => void
 }
 
 const EMPTY_BOARD: Board = { version: 1, columns: [], cards: {} }
@@ -126,5 +133,13 @@ export const useAppStore = create<AppState>((set, get) => {
     moveColumn: (columnId, toIndex) => {
       persist(moveColumn(get().board, columnId, toIndex))
     },
+
+    previewBoard: (board) => set({ board }),
+
+    commitBoard: () => {
+      void window.gc.board.save(get().board)
+    },
+
+    restoreBoard: (board) => set({ board }),
   }
 })

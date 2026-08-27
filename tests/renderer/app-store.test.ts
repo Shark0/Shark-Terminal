@@ -203,3 +203,53 @@ describe('dismissRecoveryNotice', () => {
     expect(useAppStore.getState().recoveryNotice).toBeNull()
   })
 })
+
+describe('previewBoard / commitBoard / restoreBoard', () => {
+  it('previewBoard 更新 state 但不存檔', () => {
+    const original = fixtureBoard()
+    const previewed = reducerAddCard(
+      original,
+      'col_1',
+      newCard({ title: 'preview_card', cwd: '/tmp/preview', command: 'claude' }, 'card_preview', NOW),
+    )
+    useAppStore.setState({ board: original, loaded: true })
+
+    useAppStore.getState().previewBoard(previewed)
+
+    expect(useAppStore.getState().board).toEqual(previewed)
+    // 拖拉期間每幀都會觸發 onDragOver，若這裡誤呼叫 save 就會每幀丟一次 IPC 存檔
+    expect(gc.board.save).not.toHaveBeenCalled()
+  })
+
+  it('commitBoard 把目前的 board 存檔', () => {
+    const original = fixtureBoard()
+    const previewed = reducerAddCard(
+      original,
+      'col_1',
+      newCard({ title: 'preview_card', cwd: '/tmp/preview', command: 'claude' }, 'card_preview', NOW),
+    )
+    useAppStore.setState({ board: original, loaded: true })
+    useAppStore.getState().previewBoard(previewed)
+
+    useAppStore.getState().commitBoard()
+
+    expect(gc.board.save).toHaveBeenCalledTimes(1)
+    expect(gc.board.save).toHaveBeenCalledWith(previewed)
+  })
+
+  it('restoreBoard 還原 state，且不存檔（取消操作不該留下痕跡）', () => {
+    const snapshot = fixtureBoard()
+    const previewed = reducerAddCard(
+      snapshot,
+      'col_1',
+      newCard({ title: 'preview_card', cwd: '/tmp/preview', command: 'claude' }, 'card_preview', NOW),
+    )
+    useAppStore.setState({ board: snapshot, loaded: true })
+    useAppStore.getState().previewBoard(previewed)
+
+    useAppStore.getState().restoreBoard(snapshot)
+
+    expect(useAppStore.getState().board).toEqual(snapshot)
+    expect(gc.board.save).not.toHaveBeenCalled()
+  })
+})
