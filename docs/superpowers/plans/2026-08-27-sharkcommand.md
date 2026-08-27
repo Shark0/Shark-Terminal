@@ -2029,6 +2029,10 @@ export class PtyManager {
 
     pty.onData((data) => this.dataCb?.(cardId, data))
     pty.onExit(({ exitCode }) => {
+      // 舊 pty 被重啟取代後才回報 exit 時，Map 裡已經是新的 pty。
+      // 真實 node-pty 的行程死亡回報必然非同步，因此每次重啟都會走到這裡。
+      // 只有仍是持有者的 pty 才能清除紀錄與對外廣播，否則會誤刪新 pty 並誤報已結束。
+      if (this.ptys.get(cardId) !== pty) return
       this.ptys.delete(cardId)
       this.exitCb?.(cardId, exitCode)
     })
@@ -2036,7 +2040,13 @@ export class PtyManager {
     this.ptys.set(cardId, pty)
 
     const trimmed = command.trim()
-    if (trimmed) pty.write(`${trimmed}\n`)
+    if (trimmed) {
+      try {
+        pty.write(`${trimmed}\n`)
+      } catch (err) {
+        console.warn('[pty-manager] 寫入啟動指令失敗', { cardId, command: trimmed, err })
+      }
+    }
   }
 
   write(cardId: string, data: string): void {
@@ -2045,7 +2055,12 @@ export class PtyManager {
       console.warn('[pty-manager] write 找不到對應的 pty，忽略此次輸入', { cardId })
       return
     }
-    pty.write(data)
+    try {
+      pty.write(data)
+    } catch (err) {
+      // 行程已死但 exit 尚未回報時仍可能收到輸入，不可讓例外傳到 IPC handler
+      console.warn('[pty-manager] write 失敗', { cardId, err })
+    }
   }
 
   resize(cardId: string, cols: number, rows: number): void {
@@ -2063,7 +2078,10 @@ export class PtyManager {
 
   kill(cardId: string): void {
     const pty = this.ptys.get(cardId)
-    if (!pty) return
+    if (!pty) {
+      console.warn('[pty-manager] kill 找不到對應的 pty，可能已結束或 cardId 有誤', { cardId })
+      return
+    }
     this.ptys.delete(cardId)
     try {
       pty.kill('SIGKILL')
