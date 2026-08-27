@@ -61,8 +61,8 @@ SharkCommand 是一個 macOS 桌面應用，用看板的二維佈局取代終端
   "cards": {                           // map，用 id 查
     "card_x": {
       "id": "card_x",
-      "title": "U19 登入流程重構",
-      "cwd": "/Users/shark/IdeaProjects/U19-Project",
+      "title": "訂單結帳重構",
+      "cwd": "/Users/me/projects/checkout-service",
       "command": "claude",             // 啟動指令；可自行改成任何 shell 指令
       "note": "",
       "createdAt": "2026-08-27T08:00:00Z",
@@ -84,13 +84,15 @@ SharkCommand 是一個 macOS 桌面應用，用看板的二維佈局取代終端
 
 ### 初次啟動與欄位顏色
 
-`~/.sharkcommand/board.json` 不存在時，建立預設看板，含四個欄位：**需求評估中、開發中、Review 中、等待 Merge**，皆為空欄。欄位與卡片皆可自由增刪改，預設值只是省去首次設定的成本。
+`~/.sharkcommand/board.json` 不存在時，建立**完全空白**的看板（沒有任何欄位），由使用者自行建立需要的階段。
+
+原本規劃預設四個欄位（需求評估中／開發中／Review 中／等待 Merge），實際使用後改掉：每個人的工作流不同，預設階段是強加的假設，開啟後第一件事反而變成刪掉不要的欄位。
 
 新增欄位時的顏色從一組預設色盤依序循環取用（藍 `#58a6ff`、綠 `#3fb950`、紫 `#bc8cff`、橙 `#d29922`、粉 `#f778ba`、青 `#39c5cf`），確保相鄰欄位不同色，之後可手動改。
 
 ### 卡片顯示的資訊
 
-標題、`cwd`（縮寫為 `~/U19-Project`）、**git branch**、狀態燈。
+標題、`cwd`（縮寫為 `~/checkout-service`）、**git branch**、狀態燈。
 
 branch 靠讀 `.git/HEAD` 第一行取得，成本近乎零，但對辨識卡片幫助極大（同一個 repo 的主目錄與多個 worktree，branch 是最有效的區分依據）。需處理的情境：
 

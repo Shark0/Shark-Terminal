@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Board } from '@shared/types'
-import { createDefaultBoard, newCard } from '@shared/factory'
+import { newCard, newColumn } from '@shared/factory'
 import { BoardStore, isValidBoard, reconcile } from '../../src/main/board-store'
 
 let root: string
@@ -18,22 +18,17 @@ afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true })
 })
 
-function seqId(prefix: string): () => string {
-  let n = 0
-  return () => `${prefix}_${n++}`
-}
-
 /** 供組合 tmp 檔名正則時跳脫路徑中的正則特殊字元 */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/** createDefaultBoard() 現在回傳空看板，這裡自己組一個帶一欄一卡的看板供測試用 */
 function sampleBoard(): Board {
-  const board = createDefaultBoard(seqId('col'))
+  const column = newColumn('欄位', '#58a6ff', 'col_1')
   const card = newCard({ title: 'T', cwd: '/tmp', command: 'claude' }, 'card_1', '2026-08-27T00:00:00.000Z')
-  board.columns[0].cardIds.push(card.id)
-  board.cards[card.id] = card
-  return board
+  column.cardIds.push(card.id)
+  return { version: 1, columns: [column], cards: { [card.id]: card } }
 }
 
 describe('isValidBoard', () => {
@@ -89,9 +84,9 @@ describe('reconcile', () => {
 
 describe('BoardStore.load', () => {
   it('檔案不存在時回傳預設看板並建立檔案', async () => {
-    const store = new BoardStore(file, seqId('col'))
+    const store = new BoardStore(file)
     const { board, recoveredFrom } = await store.load()
-    expect(board.columns.map((c) => c.title)).toEqual(['需求評估中', '開發中', 'Review 中', '等待 Merge'])
+    expect(board.columns).toEqual([])
     expect(recoveredFrom).toBeNull()
     await expect(fs.access(file)).resolves.toBeUndefined()
   })
@@ -99,7 +94,7 @@ describe('BoardStore.load', () => {
   it('讀回先前存檔的內容', async () => {
     const original = sampleBoard()
     await fs.writeFile(file, JSON.stringify(original))
-    const { board, recoveredFrom } = await new BoardStore(file, seqId('col')).load()
+    const { board, recoveredFrom } = await new BoardStore(file).load()
     expect(board).toEqual(original)
     expect(recoveredFrom).toBeNull()
   })
@@ -108,8 +103,8 @@ describe('BoardStore.load', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await fs.writeFile(file, '{ 這不是合法 JSON')
 
-    const { board, recoveredFrom } = await new BoardStore(file, seqId('col')).load()
-    expect(board.columns).toHaveLength(4)
+    const { board, recoveredFrom } = await new BoardStore(file).load()
+    expect(board.columns).toHaveLength(0)
     expect(Object.keys(board.cards)).toHaveLength(0)
 
     const backups = (await fs.readdir(root)).filter((f) => f.startsWith('board.json.corrupt-'))
@@ -124,8 +119,8 @@ describe('BoardStore.load', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await fs.writeFile(file, JSON.stringify({ version: 99, foo: 'bar' }))
 
-    const { board, recoveredFrom } = await new BoardStore(file, seqId('col')).load()
-    expect(board.columns).toHaveLength(4)
+    const { board, recoveredFrom } = await new BoardStore(file).load()
+    expect(board.columns).toHaveLength(0)
     expect(recoveredFrom).not.toBeNull()
 
     const backups = (await fs.readdir(root)).filter((f) => f.startsWith('board.json.corrupt-'))
@@ -138,7 +133,7 @@ describe('BoardStore.load', () => {
     broken.columns[0].cardIds.push('card_不存在')
     await fs.writeFile(file, JSON.stringify(broken))
 
-    const { board, recoveredFrom } = await new BoardStore(file, seqId('col')).load()
+    const { board, recoveredFrom } = await new BoardStore(file).load()
     expect(board.columns[0].cardIds).toEqual(['card_1'])
     expect(board.cards.card_1).toBeDefined()
     expect(recoveredFrom).toBeNull()
@@ -154,7 +149,7 @@ describe('BoardStore.save', () => {
   const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
   it('debounce 期間內不寫檔，逾時後才寫', async () => {
-    const store = new BoardStore(file, seqId('col'), DEBOUNCE)
+    const store = new BoardStore(file, DEBOUNCE)
     store.save(sampleBoard())
 
     await expect(fs.access(file)).rejects.toThrow()
@@ -164,7 +159,7 @@ describe('BoardStore.save', () => {
   })
 
   it('連續呼叫只寫最後一次的內容', async () => {
-    const store = new BoardStore(file, seqId('col'), DEBOUNCE)
+    const store = new BoardStore(file, DEBOUNCE)
 
     const first = sampleBoard()
     first.columns[0].title = '第一次'
@@ -180,7 +175,7 @@ describe('BoardStore.save', () => {
   })
 
   it('flush 立即寫出待寫入內容，不必等 debounce', async () => {
-    const store = new BoardStore(file, seqId('col'), 10_000)
+    const store = new BoardStore(file, 10_000)
     const board = sampleBoard()
     board.columns[0].title = '立即寫出'
     store.save(board)
@@ -192,13 +187,13 @@ describe('BoardStore.save', () => {
   })
 
   it('沒有待寫入內容時 flush 不建立檔案', async () => {
-    const store = new BoardStore(file, seqId('col'), DEBOUNCE)
+    const store = new BoardStore(file, DEBOUNCE)
     await store.flush()
     await expect(fs.access(file)).rejects.toThrow()
   })
 
   it('寫檔後不留下 .tmp 暫存檔', async () => {
-    const store = new BoardStore(file, seqId('col'), DEBOUNCE)
+    const store = new BoardStore(file, DEBOUNCE)
     store.save(sampleBoard())
     await store.flush()
     expect((await fs.readdir(root)).filter((f) => f.endsWith('.tmp'))).toEqual([])
@@ -215,10 +210,10 @@ describe('BoardStore 唯讀模式與清理失敗', () => {
     await fs.chmod(file, 0o000)
 
     try {
-      const store = new BoardStore(file, seqId('col'))
+      const store = new BoardStore(file)
       const { board, recoveredFrom } = await store.load()
 
-      expect(board.columns.map((c) => c.title)).toEqual(['需求評估中', '開發中', 'Review 中', '等待 Merge'])
+      expect(board.columns).toEqual([])
       expect(recoveredFrom).toBeNull()
       expect(error).toHaveBeenCalled()
     } finally {
@@ -238,7 +233,7 @@ describe('BoardStore 唯讀模式與清理失敗', () => {
     await fs.writeFile(file, JSON.stringify(original))
     await fs.chmod(file, 0o000)
 
-    const store = new BoardStore(file, seqId('col'), DEBOUNCE)
+    const store = new BoardStore(file, DEBOUNCE)
     try {
       await store.load()
       store.save(sampleBoard())
@@ -267,7 +262,7 @@ describe('BoardStore 唯讀模式與清理失敗', () => {
     await fs.writeFile(path.join(root, 'notadir'), 'x')
     const badFile = path.join(root, 'notadir', 'sub', 'board.json')
 
-    const store = new BoardStore(badFile, seqId('col'), DEBOUNCE)
+    const store = new BoardStore(badFile, DEBOUNCE)
     store.save(sampleBoard())
 
     await expect(store.flush()).resolves.toBeUndefined()

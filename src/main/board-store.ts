@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { Board, BoardLoadResult, Card, Column } from '@shared/types'
@@ -82,7 +81,6 @@ export class BoardStore {
 
   constructor(
     private readonly filePath: string,
-    private readonly genId: () => string = randomUUID,
     private readonly debounceMs: number = SAVE_DEBOUNCE_MS,
   ) {}
 
@@ -94,7 +92,7 @@ export class BoardStore {
       const code = (err as NodeJS.ErrnoException).code
       if (code === 'ENOENT') {
         // 首次啟動：建立預設看板並立即落地，之後的 save 才有檔案可覆蓋
-        const board = createDefaultBoard(this.genId)
+        const board = createDefaultBoard()
         await this.writeAtomic(board)
         return { board, recoveredFrom: null }
       }
@@ -106,7 +104,7 @@ export class BoardStore {
         err,
       })
       this.readOnly = true
-      return { board: createDefaultBoard(this.genId), recoveredFrom: null }
+      return { board: createDefaultBoard(), recoveredFrom: null }
     }
 
     let parsed: unknown
@@ -189,7 +187,7 @@ export class BoardStore {
   }
 
   private async resetToDefault(): Promise<Board> {
-    const board = createDefaultBoard(this.genId)
+    const board = createDefaultBoard()
     await this.writeAtomic(board)
     return board
   }

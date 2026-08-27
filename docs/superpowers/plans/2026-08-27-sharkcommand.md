@@ -440,14 +440,14 @@ describe('pickColumnColor', () => {
 describe('newCard', () => {
   it('note 未提供時為空字串，兩個時間戳相同', () => {
     const card = newCard(
-      { title: 'U19 登入重構', cwd: '/tmp/u19', command: 'claude' },
+      { title: '訂單結帳重構', cwd: '/tmp/project-a', command: 'claude' },
       'card_1',
       '2026-08-27T00:00:00.000Z',
     )
     expect(card).toEqual({
       id: 'card_1',
-      title: 'U19 登入重構',
-      cwd: '/tmp/u19',
+      title: '訂單結帳重構',
+      cwd: '/tmp/project-a',
       command: 'claude',
       note: '',
       createdAt: '2026-08-27T00:00:00.000Z',
@@ -1839,10 +1839,10 @@ afterEach(() => {
 describe('spawn', () => {
   it('以卡片的 cwd 開 login shell，並把 command 寫進去', () => {
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp/u19', 'claude', 120, 40)
+    manager.spawn('card_a', '/tmp/project-a', 'claude', 120, 40)
 
     expect(created).toHaveLength(1)
-    expect(created[0].opts.cwd).toBe('/tmp/u19')
+    expect(created[0].opts.cwd).toBe('/tmp/project-a')
     expect(created[0].opts.args).toEqual(['-l'])
     expect(created[0].opts.cols).toBe(120)
     expect(created[0].opts.rows).toBe(40)
@@ -2866,7 +2866,7 @@ export default function CardDialog({ card, onCancel, onSubmit, onDelete }: Props
           autoFocus
           value={draft.title}
           onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-          placeholder="例如：U19 登入流程重構"
+          placeholder="例如：訂單結帳重構"
           className="mb-3 w-full rounded border border-line bg-card px-2 py-1.5 text-[13px] text-fg outline-none focus:border-line-hover"
         />
 
@@ -4601,33 +4601,33 @@ import { fuzzyMatch } from '../../src/renderer/fuzzy'
 
 describe('fuzzyMatch', () => {
   it('空查詢符合任何目標', () => {
-    expect(fuzzyMatch('', 'U19 登入重構')).toBe(true)
+    expect(fuzzyMatch('', '訂單結帳重構')).toBe(true)
   })
 
   it('連續子字串符合', () => {
-    expect(fuzzyMatch('登入', 'U19 登入重構')).toBe(true)
+    expect(fuzzyMatch('結帳', '訂單結帳重構')).toBe(true)
   })
 
   it('不連續但順序正確的字元符合', () => {
-    expect(fuzzyMatch('u19構', 'U19 登入重構')).toBe(true)
+    expect(fuzzyMatch('訂構', '訂單結帳重構')).toBe(true)
     expect(fuzzyMatch('pbp', 'play-by-play 重構')).toBe(true)
   })
 
   it('忽略大小寫', () => {
-    expect(fuzzyMatch('U19', 'u19 登入重構')).toBe(true)
-    expect(fuzzyMatch('u19', 'U19 登入重構')).toBe(true)
+    expect(fuzzyMatch('API', 'api 端點調整')).toBe(true)
+    expect(fuzzyMatch('api', 'API 端點調整')).toBe(true)
   })
 
   it('順序錯誤不符合', () => {
-    expect(fuzzyMatch('構登', 'U19 登入重構')).toBe(false)
+    expect(fuzzyMatch('構訂', '訂單結帳重構')).toBe(false)
   })
 
   it('目標不含查詢字元時不符合', () => {
-    expect(fuzzyMatch('xyz', 'U19 登入重構')).toBe(false)
+    expect(fuzzyMatch('xyz', '訂單結帳重構')).toBe(false)
   })
 
   it('查詢比目標長時不符合', () => {
-    expect(fuzzyMatch('登入重構流程', '登入')).toBe(false)
+    expect(fuzzyMatch('訂單結帳重構流程', '訂單結帳')).toBe(false)
   })
 })
 ```

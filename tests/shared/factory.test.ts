@@ -1,43 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { COLUMN_COLORS } from '@shared/types'
-import {
-  DEFAULT_COLUMN_TITLES,
-  createDefaultBoard,
-  newCard,
-  newColumn,
-  pickColumnColor,
-} from '@shared/factory'
-
-function seqId(prefix: string): () => string {
-  let n = 0
-  return () => `${prefix}_${n++}`
-}
+import { createDefaultBoard, newCard, newColumn, pickColumnColor } from '@shared/factory'
 
 describe('createDefaultBoard', () => {
-  it('建立四個預設欄位，皆為空欄', () => {
-    const board = createDefaultBoard(seqId('col'))
-    expect(board.version).toBe(1)
-    expect(board.columns.map((c) => c.title)).toEqual([
-      '需求評估中',
-      '開發中',
-      'Review 中',
-      '等待 Merge',
-    ])
-    expect(board.columns.every((c) => c.cardIds.length === 0)).toBe(true)
-    expect(board.cards).toEqual({})
-  })
-
-  it('每個欄位取得唯一 id', () => {
-    const board = createDefaultBoard(seqId('col'))
-    const ids = board.columns.map((c) => c.id)
-    expect(new Set(ids).size).toBe(ids.length)
-  })
-
-  it('相鄰欄位顏色不同', () => {
-    const board = createDefaultBoard(seqId('col'))
-    for (let i = 1; i < board.columns.length; i++) {
-      expect(board.columns[i].color).not.toBe(board.columns[i - 1].color)
-    }
+  it('回傳空白看板，讓使用者自己建立需要的階段', () => {
+    expect(createDefaultBoard()).toEqual({ version: 1, columns: [], cards: {} })
   })
 })
 
@@ -56,14 +23,14 @@ describe('pickColumnColor', () => {
 describe('newCard', () => {
   it('note 未提供時為空字串，兩個時間戳相同', () => {
     const card = newCard(
-      { title: 'U19 登入重構', cwd: '/tmp/u19', command: 'claude' },
+      { title: '訂單結帳重構', cwd: '/tmp/project-a', command: 'claude' },
       'card_1',
       '2026-08-27T00:00:00.000Z',
     )
     expect(card).toEqual({
       id: 'card_1',
-      title: 'U19 登入重構',
-      cwd: '/tmp/u19',
+      title: '訂單結帳重構',
+      cwd: '/tmp/project-a',
       command: 'claude',
       note: '',
       createdAt: '2026-08-27T00:00:00.000Z',
@@ -89,11 +56,5 @@ describe('newColumn', () => {
       color: '#3fb950',
       cardIds: [],
     })
-  })
-})
-
-describe('DEFAULT_COLUMN_TITLES', () => {
-  it('與 spec 定義的四個階段一致', () => {
-    expect(DEFAULT_COLUMN_TITLES).toEqual(['需求評估中', '開發中', 'Review 中', '等待 Merge'])
   })
 })

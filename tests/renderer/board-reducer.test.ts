@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Board } from '@shared/types'
-import { createDefaultBoard, newCard, newColumn } from '@shared/factory'
+import { COLUMN_COLORS, type Board } from '@shared/types'
+import { newCard, newColumn } from '@shared/factory'
 import {
   addCard,
   addColumn,
@@ -15,18 +15,17 @@ import {
 const NOW = '2026-08-27T00:00:00.000Z'
 const LATER = '2026-08-27T09:30:00.000Z'
 
-function seqId(prefix: string): () => string {
-  let n = 0
-  return () => `${prefix}_${n++}`
-}
-
 function card(id: string, title = id): ReturnType<typeof newCard> {
   return newCard({ title, cwd: `/tmp/${id}`, command: 'claude' }, id, NOW)
 }
 
 /** col_0 需求評估中[card_a, card_b] / col_1 開發中[card_c] / col_2 Review 中[] / col_3 等待 Merge[] */
 function fixture(): Board {
-  let b = createDefaultBoard(seqId('col'))
+  // createDefaultBoard() 現在回傳空看板，這裡的四個欄位純粹是 reducer 測試用的固定 fixture，
+  // 跟「首次啟動要不要有預設欄位」這個產品決策無關，手動組出來即可
+  const titles = ['需求評估中', '開發中', 'Review 中', '等待 Merge']
+  const columns = titles.map((title, i) => newColumn(title, COLUMN_COLORS[i % COLUMN_COLORS.length], `col_${i}`))
+  let b: Board = { version: 1, columns, cards: {} }
   b = addCard(b, 'col_0', card('card_a'))
   b = addCard(b, 'col_0', card('card_b'))
   b = addCard(b, 'col_1', card('card_c'))

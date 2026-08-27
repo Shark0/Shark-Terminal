@@ -18,6 +18,16 @@ body {
   font-family: theme('fontFamily.ui');
 }
 
+/* titleBarStyle: 'hiddenInset' 隱藏了原生標題列，
+   必須自己指定可拖曳區域，否則整個視窗都拖不動 */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
 /* 呼吸而非閃爍——一堆卡片同時閃爍在餘光中很干擾 */
 @keyframes breathe {
   0%,

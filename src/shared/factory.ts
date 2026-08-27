@@ -1,8 +1,5 @@
 import { COLUMN_COLORS, type Board, type Card, type Column } from './types'
 
-/** spec 定義的四個預設工作階段 */
-export const DEFAULT_COLUMN_TITLES = ['需求評估中', '開發中', 'Review 中', '等待 Merge'] as const
-
 export function newCard(
   input: { title: string; cwd: string; command: string; note?: string },
   id: string,
@@ -28,11 +25,7 @@ export function pickColumnColor(existing: Column[]): string {
   return COLUMN_COLORS[existing.length % COLUMN_COLORS.length]
 }
 
-/** board.json 不存在時使用的初始看板 */
-export function createDefaultBoard(genId: () => string): Board {
-  const columns: Column[] = []
-  for (const title of DEFAULT_COLUMN_TITLES) {
-    columns.push(newColumn(title, pickColumnColor(columns), genId()))
-  }
-  return { version: 1, columns, cards: {} }
+/** board.json 不存在時使用的初始看板：空白，讓使用者自己建立需要的階段 */
+export function createDefaultBoard(): Board {
+  return { version: 1, columns: [], cards: {} }
 }

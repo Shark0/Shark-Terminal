@@ -42,6 +42,8 @@ export default function BoardPane({ home }: Props): JSX.Element {
 
   const [dialog, setDialog] = useState<DialogState>(null)
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null)
+  const [addingColumn, setAddingColumn] = useState(false)
+  const [newColumnTitle, setNewColumnTitle] = useState('')
   const snapshot = useRef<Board | null>(null)
 
   // 需要一點位移才觸發拖拉，否則單擊卡片會被誤判成拖曳
@@ -95,8 +97,16 @@ export default function BoardPane({ home }: Props): JSX.Element {
 
     if (active.data.current?.type === 'column') {
       const current = useAppStore.getState().board
-      const toIndex = current.columns.findIndex((c) => c.id === String(over.id))
-      if (toIndex !== -1) previewBoard(moveColumnIn(current, String(active.id), toIndex))
+      const overId = String(over.id)
+      // over 可能是欄位本身，也可能是該欄位內的某張卡片——
+      // 拖曳欄位經過另一欄時，指標常會落在對方的卡片上
+      const targetColumnId = current.columns.some((c) => c.id === overId)
+        ? overId
+        : columnIdOfCard(current, overId)
+      if (targetColumnId) {
+        const toIndex = current.columns.findIndex((c) => c.id === targetColumnId)
+        if (toIndex !== -1) previewBoard(moveColumnIn(current, String(active.id), toIndex))
+      }
     }
 
     // 卡片位置在 onDragOver 已經預覽到位，這裡只負責落檔
@@ -131,7 +141,9 @@ export default function BoardPane({ home }: Props): JSX.Element {
       onDragEnd={onDragEnd}
       onDragCancel={onDragCancel}
     >
-      <div className="flex h-full gap-3 overflow-x-auto p-3">
+      {/* items-start：欄位依內容決定高度，不被 stretch 拉滿；
+          overflow-auto：欄位變高超出可視範圍時能垂直捲動 */}
+      <div className="flex h-full items-start gap-3 overflow-auto p-3">
         <SortableContext
           items={board.columns.map((c) => c.id)}
           strategy={horizontalListSortingStrategy}
@@ -147,16 +159,41 @@ export default function BoardPane({ home }: Props): JSX.Element {
           ))}
         </SortableContext>
 
-        <button
-          type="button"
-          onClick={() => {
-            const title = window.prompt('新欄位名稱')?.trim()
-            if (title) addColumn(title)
-          }}
-          className="h-9 w-[160px] shrink-0 rounded-lg border border-dashed border-line text-[12px] text-fg-dim transition-colors hover:border-line-hover hover:text-fg"
-        >
-          ＋ 新增欄位
-        </button>
+        {/* Electron 不支援 window.prompt()，改用 inline input；
+            onBlur 是取消而非確認——新增沒有既有值可回退，誤觸 blur 送出空欄位會很煩 */}
+        {addingColumn ? (
+          <input
+            autoFocus
+            value={newColumnTitle}
+            onChange={(e) => setNewColumnTitle(e.target.value)}
+            onBlur={() => {
+              setAddingColumn(false)
+              setNewColumnTitle('')
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const title = newColumnTitle.trim()
+                if (title) addColumn(title)
+                setAddingColumn(false)
+                setNewColumnTitle('')
+              }
+              if (e.key === 'Escape') {
+                setAddingColumn(false)
+                setNewColumnTitle('')
+              }
+            }}
+            placeholder="新欄位名稱"
+            className="h-9 w-[160px] shrink-0 rounded-lg border border-line bg-card px-2 text-[12px] text-fg outline-none focus:border-line-hover"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAddingColumn(true)}
+            className="h-9 w-[160px] shrink-0 rounded-lg border border-dashed border-line text-[12px] text-fg-dim transition-colors hover:border-line-hover hover:text-fg"
+          >
+            ＋ 新增欄位
+          </button>
+        )}
 
         {dialog && (
           <CardDialog

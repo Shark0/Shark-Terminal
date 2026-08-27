@@ -3,21 +3,23 @@
 // 用 triple-slash reference 只在編譯期生效，不會產生實際 import，避免 vitest 執行期找不到模組。
 /// <reference path="../../src/renderer/global.d.ts" />
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Board } from '@shared/types'
-import { createDefaultBoard, newCard } from '@shared/factory'
+import { COLUMN_COLORS, type Board } from '@shared/types'
+import { newCard, newColumn } from '@shared/factory'
 import { addCard as reducerAddCard } from '../../src/renderer/store/board-reducer'
 import { useAppStore } from '../../src/renderer/store/app-store'
 
 const NOW = '2026-08-27T00:00:00.000Z'
 
-function seqId(prefix: string): () => string {
-  let n = 0
-  return () => `${prefix}_${n++}`
+/** createDefaultBoard() 現在回傳空看板，這裡手動組四個固定欄位供測試用，跟產品的預設看板決策無關 */
+function fourColumnBoard(): Board {
+  const titles = ['需求評估中', '開發中', 'Review 中', '等待 Merge']
+  const columns = titles.map((title, i) => newColumn(title, COLUMN_COLORS[i % COLUMN_COLORS.length], `col_${i}`))
+  return { version: 1, columns, cards: {} }
 }
 
-/** col_0[card_a] / col_1[] / col_2[] / col_3[]（四個預設欄位，col_0 內有一張卡片） */
+/** col_0[card_a] / col_1[] / col_2[] / col_3[]（四個固定欄位，col_0 內有一張卡片） */
 function fixtureBoard(): Board {
-  let b = createDefaultBoard(seqId('col'))
+  let b = fourColumnBoard()
   b = reducerAddCard(
     b,
     'col_0',
@@ -106,7 +108,7 @@ describe('loadBoard', () => {
 
 describe('loadBranches', () => {
   it('單一 cwd 讀取失敗時，其他 cwd 的 branch 仍然正常寫入', async () => {
-    let board = createDefaultBoard(seqId('col'))
+    let board = fourColumnBoard()
     board = reducerAddCard(
       board,
       'col_0',

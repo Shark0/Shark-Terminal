@@ -54,16 +54,16 @@ export default function CardDialog({ card, onCancel, onSubmit, onDelete }: Props
       >
         <h2 className="mb-4 text-[15px] text-fg">{card ? '編輯卡片' : '新增卡片'}</h2>
 
-        <label className="mb-1 block text-[11px] text-fg-dim">標題</label>
+        <label className="mb-1 block text-[11px] text-fg-dim">標題（必填）</label>
         <input
           autoFocus
           value={draft.title}
           onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-          placeholder="例如：U19 登入流程重構"
+          placeholder="some feature"
           className="mb-3 w-full rounded border border-line bg-card px-2 py-1.5 text-[13px] text-fg outline-none focus:border-line-hover"
         />
 
-        <label className="mb-1 block text-[11px] text-fg-dim">工作目錄</label>
+        <label className="mb-1 block text-[11px] text-fg-dim">工作目錄（必填）</label>
         <div className="mb-3 flex gap-2">
           <input
             value={draft.cwd}
@@ -98,6 +98,10 @@ export default function CardDialog({ card, onCancel, onSubmit, onDelete }: Props
           rows={3}
           className="mb-4 w-full resize-none rounded border border-line bg-card px-2 py-1.5 text-[12px] text-fg outline-none focus:border-line-hover"
         />
+
+        {!canSubmit && (
+          <p className="mb-2 text-[11px] leading-4 text-fg-dim">標題與工作目錄為必填</p>
+        )}
 
         <div className="flex items-center gap-2">
           {onDelete && (

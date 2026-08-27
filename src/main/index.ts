@@ -53,6 +53,24 @@ function createWindow(): void {
   }
 }
 
+// 兩個實例會各自持有記憶體中的 board 並互相覆蓋 ~/.sharkcommand/board.json，
+// 造成資料遺失。第二個實例直接退出，並把既有視窗帶到前景。
+//
+// dev 模式下 electron-vite 熱重啟時會短暫存在新舊兩個實例，
+// 新實例會因為拿不到鎖而直接退出，導致改一次 main 程序整個 app 就關掉。
+// 單一實例保護只有打包後的正式版需要。
+const isDev = Boolean(process.env.ELECTRON_RENDERER_URL)
+
+if (!isDev && !app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  })
+}
+
 void app.whenReady().then(() => {
   registerIpc(store, ptyManager, () => mainWindow)
   createWindow()

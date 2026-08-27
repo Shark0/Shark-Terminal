@@ -67,10 +67,10 @@ afterEach(() => {
 describe('spawn', () => {
   it('以卡片的 cwd 開 login shell，並把 command 寫進去', () => {
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp/u19', 'claude', 120, 40)
+    manager.spawn('card_a', '/tmp/project-a', 'claude', 120, 40)
 
     expect(created).toHaveLength(1)
-    expect(created[0].opts.cwd).toBe('/tmp/u19')
+    expect(created[0].opts.cwd).toBe('/tmp/project-a')
     expect(created[0].opts.args).toEqual(['-l'])
     expect(created[0].opts.cols).toBe(120)
     expect(created[0].opts.rows).toBe(40)

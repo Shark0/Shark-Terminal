@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import BoardPane from './board/BoardPane'
+import CommandPalette from './CommandPalette'
 import RecoveryNotice from './RecoveryNotice'
 import Splitter, { loadSplitRatio } from './Splitter'
 import { useAppStore } from './store/app-store'
@@ -15,6 +16,7 @@ export default function App(): JSX.Element {
   const setPtyStatus = useAppStore((s) => s.setPtyStatus)
   const [home, setHome] = useState('')
   const [ratio, setRatio] = useState(loadSplitRatio)
+  const [paletteOpen, setPaletteOpen] = useState(false)
   const resizeTimer = useRef<number | null>(null)
 
   useEffect(() => {
@@ -55,6 +57,19 @@ export default function App(): JSX.Element {
     return () => window.clearInterval(timer)
   }, [loaded])
 
+  // ⌘K 開關搜尋面板；監聽掛在 window 的冒泡階段，xterm 不會對含 metaKey 的組合鍵呼叫
+  // preventDefault，所以終端機有焦點時這裡仍收得到
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   /** 視窗或分割比例變動後重新 fit；debounce 100ms 避免對 pty 狂發 resize */
   const scheduleFit = useCallback(() => {
     if (resizeTimer.current !== null) window.clearTimeout(resizeTimer.current)
@@ -85,6 +100,8 @@ export default function App(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col bg-base">
+      {/* 可拖曳區域，同時為 hiddenInset 的紅綠燈按鈕留出空間 */}
+      <div className="drag-region h-7 shrink-0" />
       <RecoveryNotice />
       {/* 用 flexGrow 而非百分比高度，橫幅出現時上下比例不會跑掉 */}
       <div style={{ flexGrow: ratio, flexBasis: 0 }} className="min-h-0">
@@ -94,6 +111,7 @@ export default function App(): JSX.Element {
       <div style={{ flexGrow: 1 - ratio, flexBasis: 0 }} className="min-h-0">
         <TerminalPane />
       </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} home={home} />
     </div>
   )
 }
