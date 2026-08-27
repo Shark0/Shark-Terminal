@@ -4657,6 +4657,16 @@ export function fuzzyMatch(query: string, target: string): boolean {
   }
   return qi === q.length
 }
+
+/**
+ * 把游標夾在 [0, rowCount-1]；rowCount 為 0 時回 0。
+ * 下界不可省：搜尋無結果時按 ↓ 會把游標設成 -1，若只做上界裁切，
+ * Math.min(-1, 非負數) 恆為 -1，游標永遠回不到 0，
+ * 使用者修正搜尋字後按 Enter 會讀到 rows[-1] 而靜默失效。
+ */
+export function clampCursor(cursor: number, rowCount: number): number {
+  return Math.max(0, Math.min(cursor, rowCount - 1))
+}
 ```
 
 - [ ] **Step 4: 執行測試，確認通過**
@@ -4673,7 +4683,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Card } from '@shared/types'
 import StatusDot from './board/StatusDot'
 import { shortenPath } from './board/CardItem'
-import { fuzzyMatch } from './fuzzy'
+import { clampCursor, fuzzyMatch } from './fuzzy'
 import { useAppStore } from './store/app-store'
 
 interface Props {
@@ -4696,6 +4706,11 @@ export default function CommandPalette({ open, onClose, home }: Props): JSX.Elem
       for (const cardId of column.cardIds) {
         const card = board.cards[cardId]
         if (card) all.push({ card, columnTitle: column.title })
+        else
+          console.warn('[CommandPalette] 欄位含有查無對應卡片的 id，已略過', {
+            columnId: column.id,
+            cardId,
+          })
       }
     }
     return all.filter(
@@ -4711,7 +4726,7 @@ export default function CommandPalette({ open, onClose, home }: Props): JSX.Elem
   }, [open])
 
   useEffect(() => {
-    setCursor((c) => Math.min(c, Math.max(0, rows.length - 1)))
+    setCursor((c) => clampCursor(c, rows.length))
   }, [rows.length])
 
   if (!open) return null
