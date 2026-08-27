@@ -110,7 +110,7 @@ tests/
 
 **Files:**
 - Create: `package.json`, `electron.vite.config.ts`, `vitest.config.ts`
-- Create: `tsconfig.json`, `tsconfig.node.json`, `tsconfig.web.json`
+- Create: `tsconfig.json`, `tsconfig.node.json`
 - Create: `tailwind.config.js`, `postcss.config.js`
 - Create: `src/shared/types.ts`, `src/shared/factory.ts`
 - Create: `src/main/index.ts`, `src/preload/index.ts`
@@ -148,23 +148,35 @@ tests/
     "build:mac": "npm run build && electron-builder --mac --universal",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "postinstall": "electron-builder install-app-deps"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
   }
 }
 ```
+
+`postinstall` 先不要寫進去 —— 第一次 `npm install` 時 `electron-builder` 還沒安裝，postinstall 會失敗並讓整個 install 中止。Step 2 末尾才補上。
 
 - [ ] **Step 2: 安裝依賴**
 
 `node-pty` 是 native addon，必須放 `dependencies` 才會被打包；其餘 renderer 依賴會被 bundle。`postinstall` 的 `install-app-deps` 會把 `node-pty` rebuild 成 Electron 的 ABI，缺這步 app 啟動時會出現 `NODE_MODULE_VERSION` 不符錯誤。
 
+**React 必須釘在 18。** React 19 的型別移除了全域 `JSX` namespace，而本計畫所有元件都以 `JSX.Element` 標註回傳型別；裝到 19 會讓每個元件檔都出現 `找不到命名空間 JSX` 的型別錯誤。
+
 ```bash
 npm install node-pty
-npm install react react-dom zustand @xterm/xterm @xterm/addon-fit @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+npm install react@18 react-dom@18 zustand @xterm/xterm @xterm/addon-fit @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
 npm install -D electron electron-vite electron-builder vite @vitejs/plugin-react typescript vitest
-npm install -D @types/react @types/react-dom @types/node
+npm install -D @types/react@18 @types/react-dom@18 @types/node
 npm install -D tailwindcss postcss autoprefixer
 ```
+
+全部裝完後，才把 `postinstall` 補進 `package.json` 的 `scripts`，並手動執行一次：
+
+```bash
+npm pkg set scripts.postinstall="electron-builder install-app-deps"
+npx electron-builder install-app-deps
+```
+
+這一步把 `node-pty` 重新編譯成 Electron 的 ABI。缺這步，app 啟動時會出現 `NODE_MODULE_VERSION` 不符而無法載入 `node-pty`。
 
 - [ ] **Step 3: 建立建置設定檔**
 
@@ -213,15 +225,26 @@ export default defineConfig({
 })
 ```
 
-`tsconfig.json`：
+兩份獨立的 tsconfig，不使用 project references —— `composite: true` 與 `noEmit: true` 是 TypeScript 明文禁止的組合（`Composite projects may not disable emit`），而我們只做型別檢查、不需要 emit。
+
+`tsconfig.json`（renderer，同時作為編輯器的預設設定）：
 
 ```json
 {
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.node.json" },
-    { "path": "./tsconfig.web.json" }
-  ]
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "baseUrl": ".",
+    "paths": { "@shared/*": ["src/shared/*"] }
+  },
+  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "src/shared/**/*.ts"]
 }
 ```
 
@@ -230,12 +253,12 @@ export default defineConfig({
 ```json
 {
   "compilerOptions": {
-    "composite": true,
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
     "noEmit": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
     "types": ["node"],
     "baseUrl": ".",
@@ -245,26 +268,7 @@ export default defineConfig({
 }
 ```
 
-`tsconfig.web.json`（renderer）：
-
-```json
-{
-  "compilerOptions": {
-    "composite": true,
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "baseUrl": ".",
-    "paths": { "@shared/*": ["src/shared/*"] }
-  },
-  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "src/shared/**/*.ts"]
-}
-```
+測試檔會 import `src/renderer/` 底下的純邏輯模組（Task 2 的 reducer、Task 10 的 pty-activity、Task 11 的 fuzzy）。這些模組不碰 DOM，在 node 設定下型別檢查通過沒有問題。
 
 `tailwind.config.js` — 視覺 token 集中在此，後續 UI 任務一律引用這些名稱，不寫死色碼：
 
