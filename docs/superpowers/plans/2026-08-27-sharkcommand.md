@@ -3242,6 +3242,8 @@ export default function CardItem({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
     data: { type: 'card', columnId },
+    // dnd-kit 的 defaultTransition 是 200ms，超出全域約束的 ≤150ms
+    transition: { duration: 150, easing: 'ease' },
   })
 
   return (
@@ -3331,6 +3333,7 @@ export default function Column({ column, home, onAddCard, onEditCard }: Props): 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
     data: { type: 'column' },
+    transition: { duration: 150, easing: 'ease' },
   })
 
   return (
@@ -3491,7 +3494,9 @@ export default function BoardPane({ home }: Props): JSX.Element {
     snapshot.current = null
 
     if (!over) {
-      commitBoard()
+      // 放開時沒有任何有效放置目標，與 Esc 取消同一類意圖：還原而非把預覽轉正
+      if (snapshot.current) restoreBoard(snapshot.current)
+      snapshot.current = null
       return
     }
 
