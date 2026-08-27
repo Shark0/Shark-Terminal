@@ -6,6 +6,10 @@ import { BoardStore } from './board-store'
 import { PtyManager } from './pty-manager'
 import { registerIpc } from './ipc'
 
+// dev 模式執行的是 Electron.app bundle，macOS 選單列會顯示 "Electron"。
+// 明確設定名稱讓選單列與「關於」視窗顯示正確的 app 名稱。
+app.setName('SharkCommand')
+
 const boardFile = join(homedir(), '.sharkcommand', 'board.json')
 const store = new BoardStore(boardFile)
 
