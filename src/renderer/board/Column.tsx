@@ -20,6 +20,8 @@ export default function Column({ column, home, onAddCard, onEditCard }: Props): 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
     data: { type: 'column' },
+    // dnd-kit 預設 200ms，超出全域約束的 ≤150ms
+    transition: { duration: 150, easing: 'ease' },
   })
 
   return (

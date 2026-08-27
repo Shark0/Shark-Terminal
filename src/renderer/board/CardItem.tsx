@@ -29,6 +29,8 @@ export default function CardItem({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
     data: { type: 'card', columnId },
+    // dnd-kit 預設 200ms，超出全域約束的 ≤150ms
+    transition: { duration: 150, easing: 'ease' },
   })
 
   return (

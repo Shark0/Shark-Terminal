@@ -84,12 +84,14 @@ export default function BoardPane({ home }: Props): JSX.Element {
   const onDragEnd = (event: DragEndEvent): void => {
     const { active, over } = event
     setDraggingCardId(null)
-    snapshot.current = null
 
     if (!over) {
-      commitBoard()
+      // 放開時沒有任何有效放置目標，與 Esc 取消同一類意圖：還原而非把預覽轉正
+      if (snapshot.current) restoreBoard(snapshot.current)
+      snapshot.current = null
       return
     }
+    snapshot.current = null
 
     if (active.data.current?.type === 'column') {
       const current = useAppStore.getState().board
