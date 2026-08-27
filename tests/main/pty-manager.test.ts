@@ -7,6 +7,8 @@ class FakePty {
   killed: string[] = []
   cols = 0
   rows = 0
+  /** 測試用開關：設為 true 時 write() 會拋錯，模擬底層 pty 寫入失敗 */
+  failWrite = false
   private dataCb: ((data: string) => void) | null = null
   private exitCb: ((e: { exitCode: number; signal?: number }) => void) | null = null
 
@@ -26,6 +28,7 @@ class FakePty {
   }
 
   write(data: string) {
+    if (this.failWrite) throw new Error('write 失敗（模擬）')
     this.written.push(data)
   }
 
@@ -95,6 +98,40 @@ describe('spawn', () => {
     expect(created[0].killed).toContain('SIGKILL')
     expect(manager.has('card_a')).toBe(true)
   })
+
+  it('重啟後，舊 pty 延遲觸發的 exit 不會影響新 pty', () => {
+    const { created, manager } = setup()
+    const onExit = vi.fn()
+    manager.onExit(onExit)
+    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+
+    // 舊 pty（created[0]）延遲觸發 exit 時，Map 裡已經是新 pty（created[1]），
+    // 不該被誤刪、也不該對外廣播一個假的 exit
+    created[0].emitExit(0)
+    expect(manager.has('card_a')).toBe(true)
+    expect(onExit).not.toHaveBeenCalled()
+
+    created[1].emitExit(0)
+    expect(manager.has('card_a')).toBe(false)
+    expect(onExit).toHaveBeenCalledTimes(1)
+    expect(onExit).toHaveBeenCalledWith('card_a', 0)
+  })
+
+  it('spawn 寫入 command 失敗時不會 propagate', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { created, manager, spawner } = setup()
+    spawner.mockImplementationOnce((opts: SpawnOptions) => {
+      const pty = new FakePty(opts)
+      pty.failWrite = true
+      created.push(pty)
+      return pty as never
+    })
+
+    expect(() => manager.spawn('card_a', '/tmp', 'claude', 80, 24)).not.toThrow()
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
 })
 
 describe('write / resize', () => {
@@ -119,6 +156,17 @@ describe('write / resize', () => {
     expect(() => manager.write('card_nope', 'x')).not.toThrow()
     expect(() => manager.resize('card_nope', 80, 24)).not.toThrow()
     expect(warn).toHaveBeenCalledTimes(2)
+    warn.mockRestore()
+  })
+
+  it('write 底層拋出時不會 propagate', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { created, manager } = setup()
+    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    created[0].failWrite = true
+
+    expect(() => manager.write('card_a', 'ls\n')).not.toThrow()
+    expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
 })
@@ -154,6 +202,14 @@ describe('kill', () => {
 
     expect(created[0].killed).toContain('SIGKILL')
     expect(manager.has('card_a')).toBe(false)
+  })
+
+  it('對不存在的 cardId 會記錄警告', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { manager } = setup()
+    expect(() => manager.kill('card_nope')).not.toThrow()
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
   })
 })
 
