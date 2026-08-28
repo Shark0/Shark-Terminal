@@ -1,7 +1,13 @@
 import type { PtyStatus } from '@shared/types'
 
-/** 最近一次輸出距今超過這個時間即視為 idle */
-export const IDLE_THRESHOLD_MS = 2000
+/**
+ * 最近一次輸出距今超過這個時間即視為 idle。
+ *
+ * spec 原訂 2000ms，實際使用時過短：跨長時間的編譯、測試、等 API 回應期間
+ * 都沒有輸出，明明在做事卻顯示閒置。代價是真的停下來等使用者回答時，
+ * 要慢 10 秒才轉黃。
+ */
+export const IDLE_THRESHOLD_MS = 10000
 
 /**
  * 最後輸出時間存在 module-level Map 而非 zustand。
