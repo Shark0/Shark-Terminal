@@ -57,8 +57,12 @@ export default function CardItem({
         e.stopPropagation()
         onEdit()
       }}
-      className={`group cursor-pointer rounded-lg border bg-card px-3 py-2 transition-all hover:-translate-y-0.5 hover:border-line-hover ${
-        active ? 'border-line-hover ring-1 ring-line-hover' : 'border-line'
+      // hover 的邊框色只在未選取時套用——hover 變體的 CSS 優先序高於一般 class，
+      // 若無條件加上去，滑過選取中的卡片會把 accent 邊框蓋成灰色
+      className={`group cursor-pointer rounded-lg border bg-card px-3 py-2 transition-all hover:-translate-y-0.5 ${
+        active
+          ? 'border-accent ring-2 ring-accent/30'
+          : 'border-line hover:border-line-hover'
       } ${isDragging ? 'opacity-30' : ''}`}
     >
       <div className="flex items-center gap-2">

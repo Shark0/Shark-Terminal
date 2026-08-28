@@ -15,7 +15,9 @@ export default function TerminalHeader({ card, status, home }: Props): JSX.Eleme
   const alive = status === 'running' || status === 'idle'
 
   return (
-    <div className="flex h-9 shrink-0 items-center gap-3 border-b border-line px-3">
+    // 逐邊指定顏色而非用 border-line 一次設四邊——後者是 border-color 簡寫，
+    // 與 border-t-accent 的 border-top-color 誰勝出取決於 Tailwind 產生的順序，不可靠
+    <div className="flex h-9 shrink-0 items-center gap-3 border-t-2 border-t-accent border-b border-b-line px-3">
       <span className="shrink-0 truncate text-[13px] text-fg">{card.title}</span>
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg-dim">
         {shortenPath(card.cwd, home)}
