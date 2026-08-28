@@ -15,8 +15,10 @@ asarUnpack:
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.icns
-  # productName 是中文，但 .dmg 檔名保持英文——中文檔名在分享、下載、命令列引用時容易出編碼問題
-  artifactName: SharkTerminal-${version}-${arch}.${ext}
+  # 檔名刻意不帶版號：GitHub 的 releases/latest/download/<檔名> 是固定網址，
+  # 檔名帶版號的話 README 每次發版都要跟著改，漏改就變死連結。
+  # 代價是下載下來的檔案看不出版本，版本資訊在 Release 頁面與 app 的「關於」裡
+  artifactName: SharkTerminal-${arch}.${ext}
   target:
     - target: dmg
       # node-pty 的 prebuild 在 universal 合併（lipo）階段會衝突，改為分別產出兩包
