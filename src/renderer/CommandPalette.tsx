@@ -7,12 +7,15 @@ import { fuzzyMatch } from './fuzzy'
 import { useAppStore } from './store/app-store'
 
 interface Props {
-  open: boolean
   onClose: () => void
   home: string
 }
 
-export default function CommandPalette({ open, onClose, home }: Props): JSX.Element | null {
+// 由 App.tsx 用 {paletteOpen && <CommandPalette .../>} 條件渲染，不再接收 open prop——
+// 每次開啟都是全新掛載，query/cursor 的初始值天然乾淨，不需要額外的重置 useEffect，
+// 也順帶修掉「開啟瞬間有一幀顯示上次搜尋字串」的問題。關閉時整個卸載，board/ptyStatus
+// 的訂閱與 rows 的 useMemo 不會在關閉期間跟著每次看板變動（拖拉、狀態輪詢）重算
+export default function CommandPalette({ onClose, home }: Props): JSX.Element {
   const board = useAppStore((s) => s.board)
   const ptyStatus = useAppStore((s) => s.ptyStatus)
   const setActiveCard = useAppStore((s) => s.setActiveCard)
@@ -39,17 +42,8 @@ export default function CommandPalette({ open, onClose, home }: Props): JSX.Elem
   }, [board, query])
 
   useEffect(() => {
-    if (open) {
-      setQuery('')
-      setCursor(0)
-    }
-  }, [open])
-
-  useEffect(() => {
     setCursor((c) => clampCursor(c, rows.length))
   }, [rows.length])
-
-  if (!open) return null
 
   const choose = (cardId: string): void => {
     setActiveCard(cardId)

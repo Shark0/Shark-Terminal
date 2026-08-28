@@ -42,6 +42,11 @@ export function getTerminal(cardId: string): TerminalEntry | undefined {
   return registry.get(cardId)
 }
 
+/**
+ * 查詢是否已有對應的 Terminal 實例。
+ * 目前只有測試在用——保留是為了讓 registry 的查詢介面完整
+ * （有 ensure/get/dispose 卻不能問「存不存在」並不合理）。
+ */
 export function hasTerminal(cardId: string): boolean {
   return registry.has(cardId)
 }

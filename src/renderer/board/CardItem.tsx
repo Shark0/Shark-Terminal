@@ -11,7 +11,6 @@ export { shortenPath }
 
 interface Props {
   card: Card
-  columnId: string
   active: boolean
   home: string
   status: PtyStatus | undefined
@@ -23,7 +22,6 @@ interface Props {
 
 export default function CardItem({
   card,
-  columnId,
   active,
   home,
   status,
@@ -33,7 +31,9 @@ export default function CardItem({
 }: Props): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
-    data: { type: 'card', columnId },
+    // 欄位資訊不從這裡讀——BoardPane 是用 columnIdOfCard 從 board 狀態推導，
+    // 這裡放 columnId 只會讓人誤以為欄位資訊來自這個 data
+    data: { type: 'card' },
     // dnd-kit 預設 200ms，超出全域約束的 ≤150ms
     transition: { duration: 150, easing: 'ease' },
   })

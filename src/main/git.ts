@@ -13,8 +13,12 @@ async function findGitEntry(cwd: string): Promise<string | null> {
     try {
       await fs.stat(candidate)
       return candidate
-    } catch {
-      // 此層沒有 .git，繼續往上找；到根目錄仍找不到即非 repo
+    } catch (err) {
+      // 此層沒有 .git 是正常情況（會繼續往上找），但權限或符號連結問題應該留下線索
+      const code = (err as NodeJS.ErrnoException).code
+      if (code !== 'ENOENT') {
+        console.warn('[git] 檢查 .git 時發生非預期錯誤，跳過此層繼續往上找', { dir, code, err })
+      }
     }
     const parent = path.dirname(dir)
     if (parent === dir) return null

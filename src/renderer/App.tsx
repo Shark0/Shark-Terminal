@@ -122,10 +122,10 @@ export default function App(): JSX.Element {
         </div>
         <Splitter onChange={handleSplitChange} onCommit={scheduleFit} containerRef={splitContainerRef} />
         <div style={{ flexGrow: 1 - ratio, flexBasis: 0 }} className="min-h-0">
-          <TerminalPane />
+          <TerminalPane home={home} />
         </div>
       </div>
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} home={home} />
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} home={home} />}
     </div>
   )
 }

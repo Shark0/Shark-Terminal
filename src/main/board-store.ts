@@ -47,17 +47,27 @@ export function isValidBoard(value: unknown): value is Board {
  * 結構合法但引用錯亂時用這個修，不該讓使用者整個看板被重置。
  */
 export function reconcile(board: Board): Board {
+  // 也用來偵測同一個 cardId 重複出現在多個欄位——README 明確邀請使用者手動編輯
+  // board.json，這種手改造成的重複引用是可達的，重複會讓兩個 useSortable 註冊
+  // 同一個 dnd-kit id，拖曳碰撞偵測會有歧義
+  const seen = new Set<string>()
   const columns = board.columns.map((c) => ({
     ...c,
     cardIds: c.cardIds.filter((id) => {
-      if (board.cards[id]) return true
-      console.warn('[board-store] 移除指向不存在卡片的引用', { columnId: c.id, cardId: id })
-      return false
+      if (!board.cards[id]) {
+        console.warn('[board-store] 移除指向不存在卡片的引用', { columnId: c.id, cardId: id })
+        return false
+      }
+      if (seen.has(id)) {
+        console.warn('[board-store] 卡片重複出現在多個欄位，只保留第一次', { columnId: c.id, cardId: id })
+        return false
+      }
+      seen.add(id)
+      return true
     }),
   }))
 
-  const placed = new Set(columns.flatMap((c) => c.cardIds))
-  const orphans = Object.keys(board.cards).filter((id) => !placed.has(id))
+  const orphans = Object.keys(board.cards).filter((id) => !seen.has(id))
 
   if (orphans.length === 0) return { ...board, columns }
 

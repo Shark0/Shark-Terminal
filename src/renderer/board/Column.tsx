@@ -51,7 +51,6 @@ export default function Column({ column, home, onAddCard, onEditCard }: Props): 
               <CardItem
                 key={cardId}
                 card={card}
-                columnId={column.id}
                 home={home}
                 active={activeCardId === cardId}
                 status={ptyStatus[cardId]}

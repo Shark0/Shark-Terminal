@@ -266,6 +266,13 @@ describe('killAll', () => {
 
     expect(created[0].killed).toEqual(['SIGTERM', 'SIGKILL'])
     expect(created[1].killed).toEqual(['SIGTERM', 'SIGKILL'])
+    // killAll 不自己從 Map 移除——與 kill() 同一個契約，移除與廣播統一交給 onExit
+    // handler。真實環境下 SIGKILL 保證讓子行程終止、觸發 onExit；這裡用 emitExit
+    // 模擬那個回呼，藉此驗證 killAll 確實沒有搶先 delete
+    expect(manager.has('card_a')).toBe(true)
+    expect(manager.has('card_b')).toBe(true)
+    created[0].emitExit(0)
+    created[1].emitExit(0)
     expect(manager.has('card_a')).toBe(false)
     expect(manager.has('card_b')).toBe(false)
   })
@@ -282,6 +289,23 @@ describe('killAll', () => {
     await done
 
     expect(created[0].killed).toEqual(['SIGTERM'])
+  })
+
+  it('killAll 送出 SIGKILL 後 pty 觸發 exit，仍會正確廣播——這是未來重用 killAll（例如「停止全部」按鈕）時，卡片狀態能正確更新為已停止的前提', async () => {
+    vi.useFakeTimers()
+    const { created, manager } = setup()
+    const onExit = vi.fn()
+    manager.onExit(onExit)
+    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+
+    const done = manager.killAll(500)
+    await vi.advanceTimersByTimeAsync(500)
+    await done
+
+    created[0].emitExit(0)
+
+    expect(onExit).toHaveBeenCalledTimes(1)
+    expect(onExit).toHaveBeenCalledWith('card_a', 0)
   })
 
   it('沒有任何 pty 時立即完成', async () => {

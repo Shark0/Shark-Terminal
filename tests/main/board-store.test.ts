@@ -80,6 +80,19 @@ describe('reconcile', () => {
     expect(fixed.columns).toEqual([])
     expect(fixed.cards).toEqual({})
   })
+
+  it('同一張卡片重複出現在兩個欄位時，只保留第一次出現的位置', () => {
+    const board = sampleBoard()
+    const secondColumn = newColumn('第二欄', '#3fb950', 'col_2')
+    // README 明確邀請使用者手動編輯 board.json，這種手改造成的重複引用是可達的
+    secondColumn.cardIds.push('card_1')
+    board.columns.push(secondColumn)
+
+    const fixed = reconcile(board)
+
+    expect(fixed.columns[0].cardIds).toEqual(['card_1'])
+    expect(fixed.columns[1].cardIds).toEqual([])
+  })
 })
 
 describe('BoardStore.load', () => {

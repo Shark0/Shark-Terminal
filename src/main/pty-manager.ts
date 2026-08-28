@@ -129,11 +129,14 @@ export class PtyManager {
       for (const id of ids) {
         const pty = this.ptys.get(id)
         if (!pty) continue
-        this.ptys.delete(id)
+        // 不在這裡 delete：移除與 exit 廣播統一由 onExit handler 處理，
+        // 與 kill() 保持同一個契約——否則 onExit 的身分比對會因為 Map 已無此
+        // cardId 而失敗，導致 exitCb 永遠不會廣播，卡片會一直停在執行中
         try {
           pty.kill('SIGKILL')
         } catch (err) {
           console.warn('[pty-manager] 送出 SIGKILL 失敗', { cardId: id, err })
+          this.orphans.add(pty)
         }
       }
     }
@@ -150,6 +153,12 @@ export class PtyManager {
     this.orphans.clear()
   }
 
+  /**
+   * 查詢是否已有對應的 pty。
+   * 目前只有測試在用——spawn() 內部判斷重複開啟用的是 this.ptys.has()
+   * （Map 原生方法，不是這個包裝）。保留是為了讓對外查詢介面完整
+   * （有 spawn/write/resize/kill/killAll 卻不能問「存不存在」並不合理）。
+   */
   has(cardId: string): boolean {
     return this.ptys.has(cardId)
   }
