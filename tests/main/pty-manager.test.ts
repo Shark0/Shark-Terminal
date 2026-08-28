@@ -111,13 +111,27 @@ describe('spawn', () => {
   })
 
   it('對已存在的 cardId 再次 spawn 會先殺掉舊的（重啟語意）', () => {
+    vi.useFakeTimers()
     const { created, manager } = setup()
     manager.spawn('card_a', '/tmp', 'claude', 80, 24)
     manager.spawn('card_a', '/tmp', 'claude', 80, 24)
 
     expect(created).toHaveLength(2)
-    expect(created[0].killed).toContain('SIGKILL')
+    // 重啟也走 SIGHUP，舊 session 的歷史才會寫回檔案
+    expect(created[0].killed).toEqual(['SIGHUP'])
     expect(manager.has('card_a')).toBe(true)
+  })
+
+  it('重啟時舊 pty 沒被 SIGHUP 帶走，逾時仍會強制終止，不留孤兒', () => {
+    vi.useFakeTimers()
+    const { created, manager } = setup()
+    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+
+    // 逾時判斷必須看舊 pty 自己有沒有結束，不能看 Map——Map 早已被新 pty 佔據
+    vi.advanceTimersByTime(500)
+    expect(created[0].killed).toEqual(['SIGHUP', 'SIGKILL'])
+    expect(created[1].killed).toEqual([])
   })
 
   it('重啟後，舊 pty 延遲觸發的 exit 不會影響新 pty', () => {
@@ -216,14 +230,39 @@ describe('事件廣播', () => {
 })
 
 describe('kill', () => {
-  it('kill 送出 SIGKILL', () => {
+  it('kill 先送 SIGHUP——SIGKILL/SIGTERM 都不會讓 shell 寫回歷史，使用者打過的指令會全部消失', () => {
+    vi.useFakeTimers()
     const { created, manager } = setup()
     manager.spawn('card_a', '/tmp', 'claude', 80, 24)
     manager.kill('card_a')
 
-    expect(created[0].killed).toContain('SIGKILL')
+    expect(created[0].killed).toEqual(['SIGHUP'])
     // 程序尚未死透，刻意不在這裡從 Map 移除——移除與廣播統一交給 onExit handler
     expect(manager.has('card_a')).toBe(true)
+  })
+
+  it('SIGHUP 後逾時仍存活，升級為 SIGKILL', () => {
+    vi.useFakeTimers()
+    const { created, manager } = setup()
+    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.kill('card_a')
+
+    vi.advanceTimersByTime(499)
+    expect(created[0].killed).toEqual(['SIGHUP'])
+
+    vi.advanceTimersByTime(1)
+    expect(created[0].killed).toEqual(['SIGHUP', 'SIGKILL'])
+  })
+
+  it('SIGHUP 後已自行結束的 pty 不會再被 SIGKILL', () => {
+    vi.useFakeTimers()
+    const { created, manager } = setup()
+    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.kill('card_a')
+    created[0].emitExit(0)
+
+    vi.advanceTimersByTime(500)
+    expect(created[0].killed).toEqual(['SIGHUP'])
   })
 
   it('kill 之後 pty 回報 exit 時，自 Map 移除並廣播', () => {
@@ -232,6 +271,7 @@ describe('kill', () => {
     manager.onExit(onExit)
     manager.spawn('card_a', '/tmp', 'claude', 80, 24)
 
+    vi.useFakeTimers()
     manager.kill('card_a')
     created[0].emitExit(0)
 
@@ -250,7 +290,7 @@ describe('kill', () => {
 })
 
 describe('killAll', () => {
-  it('先全部送 SIGTERM，逾時後對仍存活者送 SIGKILL', async () => {
+  it('先全部送 SIGHUP 讓 shell 收攤，逾時後對仍存活者送 SIGKILL', async () => {
     vi.useFakeTimers()
     const { created, manager } = setup()
     manager.spawn('card_a', '/tmp', 'claude', 80, 24)
@@ -258,14 +298,14 @@ describe('killAll', () => {
 
     const done = manager.killAll(500)
 
-    expect(created[0].killed).toEqual(['SIGTERM'])
-    expect(created[1].killed).toEqual(['SIGTERM'])
+    expect(created[0].killed).toEqual(['SIGHUP'])
+    expect(created[1].killed).toEqual(['SIGHUP'])
 
     await vi.advanceTimersByTimeAsync(500)
     await done
 
-    expect(created[0].killed).toEqual(['SIGTERM', 'SIGKILL'])
-    expect(created[1].killed).toEqual(['SIGTERM', 'SIGKILL'])
+    expect(created[0].killed).toEqual(['SIGHUP', 'SIGKILL'])
+    expect(created[1].killed).toEqual(['SIGHUP', 'SIGKILL'])
     // killAll 不自己從 Map 移除——與 kill() 同一個契約，移除與廣播統一交給 onExit
     // handler。真實環境下 SIGKILL 保證讓子行程終止、觸發 onExit；這裡用 emitExit
     // 模擬那個回呼，藉此驗證 killAll 確實沒有搶先 delete
@@ -288,7 +328,7 @@ describe('killAll', () => {
     await vi.advanceTimersByTimeAsync(500)
     await done
 
-    expect(created[0].killed).toEqual(['SIGTERM'])
+    expect(created[0].killed).toEqual(['SIGHUP'])
   })
 
   it('killAll 送出 SIGKILL 後 pty 觸發 exit，仍會正確廣播——這是未來重用 killAll（例如「停止全部」按鈕）時，卡片狀態能正確更新為已停止的前提', async () => {

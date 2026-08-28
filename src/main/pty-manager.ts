@@ -18,6 +18,11 @@ export class PtyManager {
   private readonly ptys = new Map<string, IPty>()
   /** kill 失敗、已從 ptys 移除但可能仍存活的 pty，killAll 時要再試一次 */
   private readonly orphans = new Set<IPty>()
+  /**
+   * 已回報 exit 的 pty。SIGHUP 之後要判斷「還活著嗎」才決定是否升級成 SIGKILL，
+   * 而 ptys 在重啟情境下已被新 pty 覆蓋，拿它判斷舊 pty 的死活會誤判
+   */
+  private readonly exited = new WeakSet<IPty>()
   private dataCb: ((cardId: string, data: string) => void) | null = null
   private exitCb: ((cardId: string, exitCode: number) => void) | null = null
 
@@ -48,6 +53,8 @@ export class PtyManager {
 
     pty.onData((data) => this.dataCb?.(cardId, data))
     pty.onExit(({ exitCode }) => {
+      // 不論是否仍是持有者都要記錄——kill() 的逾時升級靠這個判斷 pty 有沒有自行結束
+      this.exited.add(pty)
       // 舊 pty 被重啟取代後才回報 exit 時，Map 裡已經是新的 pty。
       // 只有仍是持有者的 pty 才能清除紀錄與對外廣播，否則會誤刪新 pty 並誤報已結束。
       if (this.ptys.get(cardId) !== pty) return
@@ -93,6 +100,16 @@ export class PtyManager {
     }
   }
 
+  /**
+   * 停止指定卡片的 pty。
+   *
+   * 先送 SIGHUP 而非 SIGKILL：SIGHUP 正是真實終端機視窗關閉時送出的信號，
+   * shell 收到後會走完整收攤流程，把這個 session 的指令寫回 HISTFILE；
+   * SIGKILL 與 SIGTERM 都不會，使用者在卡片裡打過的指令會全部消失
+   * （zsh 預設 INC_APPEND_HISTORY 為 off，只在正常結束時寫檔）。
+   * 實測 SIGHUP 到程序結束約 70ms，即使前景有程序佔著終端機也一樣，
+   * 因此 500ms 寬限期足夠。
+   */
   kill(cardId: string): void {
     const pty = this.ptys.get(cardId)
     if (!pty) {
@@ -102,25 +119,38 @@ export class PtyManager {
     // 不在這裡從 Map 移除：移除與 exit 廣播統一由 onExit handler 處理，
     // 否則身分比對會因為 Map 已無此 cardId 而失敗，導致主動 kill 永遠不廣播 exit
     try {
-      pty.kill('SIGKILL')
+      pty.kill('SIGHUP')
     } catch (err) {
       // 送信號失敗代表這個 pty 可能仍存活，記下來讓 killAll 有機會再試，
       // 否則 spawn 覆蓋 Map 之後就再也觸及不到它，變成孤兒程序
-      console.warn('[pty-manager] kill 失敗，列入孤兒清單', { cardId, err })
+      console.warn('[pty-manager] 送出 SIGHUP 失敗，列入孤兒清單', { cardId, err })
       this.orphans.add(pty)
+      return
     }
+
+    // 寬限期過後仍活著就強制終止。用 exited 而非 ptys 判斷死活——重啟情境下
+    // Map 裡已經換成新的 pty，用它會誤以為舊 pty 已結束而放過它，留下孤兒程序
+    setTimeout(() => {
+      if (this.exited.has(pty)) return
+      try {
+        pty.kill('SIGKILL')
+      } catch (err) {
+        console.warn('[pty-manager] SIGHUP 後的強制終止失敗，列入孤兒清單', { cardId, err })
+        this.orphans.add(pty)
+      }
+    }, KILL_TIMEOUT_MS)
   }
 
-  /** app 結束時呼叫：全部 SIGTERM，逾時後對仍存活者 SIGKILL */
+  /** app 結束時呼叫：全部 SIGHUP 讓 shell 正常收攤（歷史才會寫回檔案），逾時後對仍存活者 SIGKILL */
   async killAll(timeoutMs: number = KILL_TIMEOUT_MS): Promise<void> {
     const ids = [...this.ptys.keys()]
 
     if (ids.length > 0) {
       for (const id of ids) {
         try {
-          this.ptys.get(id)?.kill('SIGTERM')
+          this.ptys.get(id)?.kill('SIGHUP')
         } catch (err) {
-          console.warn('[pty-manager] 送出 SIGTERM 失敗', { cardId: id, err })
+          console.warn('[pty-manager] 送出 SIGHUP 失敗', { cardId: id, err })
         }
       }
 
@@ -142,7 +172,7 @@ export class PtyManager {
     }
 
     // 最後處理 kill 曾經失敗的孤兒——這些已經不在 ptys 裡，上面的迴圈觸及不到。
-    // 孤兒已經在先前的 kill() 嘗試過 SIGKILL，這裡直接重試，不需要再走一次 SIGTERM 寬限期
+    // 孤兒的 SIGHUP 當初就沒送成功，這裡不再重試溫和信號，直接強制終止
     for (const pty of this.orphans) {
       try {
         pty.kill('SIGKILL')
