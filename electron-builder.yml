@@ -1,0 +1,25 @@
+appId: com.shark.sharkterminal
+productName: Shark Terminal
+
+directories:
+  output: release
+
+files:
+  - out/**/*
+  - package.json
+
+# node-pty 是 native addon，必須解壓在 asar 之外才能被 dlopen
+asarUnpack:
+  - '**/node_modules/node-pty/**'
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+  # productName 是中文，但 .dmg 檔名保持英文——中文檔名在分享、下載、命令列引用時容易出編碼問題
+  artifactName: SharkTerminal-${version}-${arch}.${ext}
+  target:
+    - target: dmg
+      # node-pty 的 prebuild 在 universal 合併（lipo）階段會衝突，改為分別產出兩包
+      arch:
+        - arm64
+        - x64

@@ -1,4 +1,4 @@
-# SharkCommand 設計文件
+# Shark Terminal 設計文件
 
 日期：2026-08-27
 
@@ -10,7 +10,7 @@
 2. **階段不可控** — 每個 session 進行到哪個工作階段（需求評估 / 開發 / Review / 等待 Merge）沒有地方記錄
 3. **分頁水平排開** — 終端機的 tab bar 是一維的，塞滿後既看不出結構，也分不清哪個分頁在做什麼
 
-SharkCommand 是一個 macOS 桌面應用，用看板的二維佈局取代終端機一維的 tab bar：**欄位代表工作階段，卡片代表一個 Claude Code session**，卡片可拖拉跨欄以推進階段。
+Shark Terminal是一個 macOS 桌面應用，用看板的二維佈局取代終端機一維的 tab bar：**欄位代表工作階段，卡片代表一個 Claude Code session**，卡片可拖拉跨欄以推進階段。
 
 ### 成功標準
 
@@ -35,7 +35,7 @@ SharkCommand 是一個 macOS 桌面應用，用看板的二維佈局取代終端
 | 狀態 | zustand | 拖拉高頻更新，避免 Context 整棵樹重繪 |
 | 樣式 | Tailwind + 獨立 CSS（xterm 客製） | 與既有技術棧一致；xterm 的 DOM 由函式庫產生，其客製走獨立 CSS |
 | 測試 | Vitest | 與 Vite 建置共用設定，純函式測試啟動快 |
-| 打包 | electron-builder | universal binary → `.dmg` |
+| 打包 | electron-builder | arm64 與 x64 各一包 `.dmg`（見下方說明） |
 
 ### 被否決的方案
 
@@ -45,7 +45,7 @@ SharkCommand 是一個 macOS 桌面應用，用看板的二維佈局取代終端
 
 ## 3. 資料模型
 
-檔案位置：`~/.sharkcommand/board.json`（使用者家目錄，不進 repo，讓每個使用者有自己的看板）
+檔案位置：`~/.sharkterminal/board.json`（使用者家目錄，不進 repo，讓每個使用者有自己的看板）
 
 ```jsonc
 {
@@ -61,8 +61,8 @@ SharkCommand 是一個 macOS 桌面應用，用看板的二維佈局取代終端
   "cards": {                           // map，用 id 查
     "card_x": {
       "id": "card_x",
-      "title": "U19 登入流程重構",
-      "cwd": "/Users/shark/IdeaProjects/U19-Project",
+      "title": "訂單結帳重構",
+      "cwd": "/Users/me/projects/checkout-service",
       "command": "claude",             // 啟動指令；可自行改成任何 shell 指令
       "note": "",
       "createdAt": "2026-08-27T08:00:00Z",
@@ -84,13 +84,15 @@ SharkCommand 是一個 macOS 桌面應用，用看板的二維佈局取代終端
 
 ### 初次啟動與欄位顏色
 
-`~/.sharkcommand/board.json` 不存在時，建立預設看板，含四個欄位：**需求評估中、開發中、Review 中、等待 Merge**，皆為空欄。欄位與卡片皆可自由增刪改，預設值只是省去首次設定的成本。
+`~/.sharkterminal/board.json` 不存在時，建立**完全空白**的看板（沒有任何欄位），由使用者自行建立需要的階段。
+
+原本規劃預設四個欄位（需求評估中／開發中／Review 中／等待 Merge），實際使用後改掉：每個人的工作流不同，預設階段是強加的假設，開啟後第一件事反而變成刪掉不要的欄位。
 
 新增欄位時的顏色從一組預設色盤依序循環取用（藍 `#58a6ff`、綠 `#3fb950`、紫 `#bc8cff`、橙 `#d29922`、粉 `#f778ba`、青 `#39c5cf`），確保相鄰欄位不同色，之後可手動改。
 
 ### 卡片顯示的資訊
 
-標題、`cwd`（縮寫為 `~/U19-Project`）、**git branch**、狀態燈。
+標題、`cwd`（縮寫為 `~/checkout-service`）、**git branch**、狀態燈。
 
 branch 靠讀 `.git/HEAD` 第一行取得，成本近乎零，但對辨識卡片幫助極大（同一個 repo 的主目錄與多個 worktree，branch 是最有效的區分依據）。需處理的情境：
 
@@ -224,12 +226,16 @@ GUI 加子程序的應用，E2E 投報率低。策略是**測純邏輯，UI 手�
 
 ## 7. 分發
 
-**打包**：`electron-builder` 產出 **universal binary** 的 `.dmg`。在 Apple Silicon 上打包出的 arm64 版本，Intel Mac 無法執行，因此 universal 設定從專案初期就配好。`node-pty` 為 native addon，electron-builder 會將編譯好的 binary 一併打包，接收者無需安裝 Xcode Command Line Tools。
+**打包**：`electron-builder` **分別產出 arm64 與 x64 兩個 `.dmg`**。
+
+原本規劃的是單一 universal binary，實作時證實不可行：`node-pty` 的跨架構 prebuild 在 lipo 合併階段衝突。這是 native module 的已知限制，不是設定錯誤（build log 中沒有 Node 版本相關的 EBADENGINE 錯誤）。兩包功能完全相同，代價僅是分發時接收者要選對架構，README 已說明。強求 universal 需自行編譯 `node-pty` 或等上游修復，成本遠高於收益。
+
+`node-pty` 為 native addon，以 `asarUnpack` 解壓在 asar 之外，接收者無需安裝 Xcode Command Line Tools。
 
 **Gatekeeper**：未經 Apple 簽名的 app，首次開啟會被擋下並顯示「無法驗證開發者」。README 須寫明解法：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/SharkCommand.app
+xattr -dr com.apple.quarantine "/Applications/Shark Terminal.app"
 ```
 
 執行一次即可。若日後需散佈給非工程師，再考慮 Apple Developer Program（$99/年）的簽名與公證，屆時下載即可開啟。
@@ -247,7 +253,7 @@ xattr -dr com.apple.quarantine /Applications/SharkCommand.app
 - git branch 顯示
 - ⌘K 快速跳轉
 - `board.json` 持久化與損毀容錯
-- electron-builder 打包 universal `.dmg`
+- electron-builder 打包 `.dmg`（arm64 與 x64 各一包）
 
 ### 明確排除至 v2
 

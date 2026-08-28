@@ -1,4 +1,4 @@
-# SharkCommand Implementation Plan
+# Shark Terminal Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -16,13 +16,13 @@
 - **Electron 安全設定**：一律 `contextIsolation: true`、`nodeIntegration: false`、`sandbox: false`（preload 需 require `electron`）
 - **renderer 不得 import Node 模組**：`node-pty`、`fs`、`path` 只能出現在 `src/main/**`
 - **所有 UI 文字、程式碼註解、logger 訊息使用繁體中文**；變數、函式、型別名稱維持英文
-- **設定檔路徑**：`~/.sharkcommand/board.json`
+- **設定檔路徑**：`~/.sharkterminal/board.json`
 - **debounce 常數**：board 存檔 500ms、terminal resize 100ms
 - **狀態燈門檻**：最近 2000ms 內有 output 為 `running`，否則 `idle`
 - **pty 關閉流程**：SIGTERM → 等 500ms → SIGKILL
 - **xterm scrollback**：5000 行
 - **過場動畫**：≤150ms（狀態燈呼吸動畫 2s 週期不受此限）
-- **打包**：electron-builder 產出 universal binary `.dmg`
+- **打包**：electron-builder 產出 `.dmg`（原規劃 universal，實作證實 node-pty 的跨架構 prebuild 在 lipo 合併衝突，改為 arm64 與 x64 各一包）
 - **錯誤記錄**：所有 catch block、以及 `switch` / `if-else` 的 fallback 分支，必須以 `console.warn` 或 `console.error` 記錄上下文，訊息格式 `[模組名] 繁體中文說明`，並帶上原始 error
 
 ## 視覺 Token（所有 UI 任務共用）
@@ -102,7 +102,7 @@ tests/
 | 8 | 拖拉 | 卡片跨欄、卡片重排、欄位重排 |
 | 9 | 終端機面板 + Splitter | 點卡片可啟動 Claude 並正常互動 |
 | 10 | 狀態燈 + git branch 顯示 | 卡片顯示 running/idle/stopped 與 branch |
-| 11 | ⌘K + 打包 + README | 產出可分發的 universal `.dmg` |
+| 11 | ⌘K + 打包 + README | 產出可分發的 `.dmg`（arm64 / x64 各一包） |
 
 ---
 
@@ -110,8 +110,8 @@ tests/
 
 **Files:**
 - Create: `package.json`, `electron.vite.config.ts`, `vitest.config.ts`
-- Create: `tsconfig.json`, `tsconfig.node.json`, `tsconfig.web.json`
-- Create: `tailwind.config.js`, `postcss.config.js`
+- Create: `tsconfig.json`, `tsconfig.node.json`
+- Create: `tailwind.config.mjs`, `postcss.config.mjs`
 - Create: `src/shared/types.ts`, `src/shared/factory.ts`
 - Create: `src/main/index.ts`, `src/preload/index.ts`
 - Create: `src/renderer/index.html`, `src/renderer/main.tsx`, `src/renderer/App.tsx`, `src/renderer/styles/index.css`
@@ -137,7 +137,7 @@ tests/
 
 ```json
 {
-  "name": "sharkcommand",
+  "name": "shark-terminal",
   "version": "0.1.0",
   "description": "Trello 式看板管理多個 Claude Code session",
   "main": "./out/main/index.js",
@@ -145,26 +145,38 @@ tests/
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "build:mac": "npm run build && electron-builder --mac --universal",
+    "build:mac": "npm run build && electron-builder --mac",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "postinstall": "electron-builder install-app-deps"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
   }
 }
 ```
+
+`postinstall` 先不要寫進去 —— 第一次 `npm install` 時 `electron-builder` 還沒安裝，postinstall 會失敗並讓整個 install 中止。Step 2 末尾才補上。
 
 - [ ] **Step 2: 安裝依賴**
 
 `node-pty` 是 native addon，必須放 `dependencies` 才會被打包；其餘 renderer 依賴會被 bundle。`postinstall` 的 `install-app-deps` 會把 `node-pty` rebuild 成 Electron 的 ABI，缺這步 app 啟動時會出現 `NODE_MODULE_VERSION` 不符錯誤。
 
+**React 必須釘在 18。** React 19 的型別移除了全域 `JSX` namespace，而本計畫所有元件都以 `JSX.Element` 標註回傳型別；裝到 19 會讓每個元件檔都出現 `找不到命名空間 JSX` 的型別錯誤。
+
 ```bash
 npm install node-pty
-npm install react react-dom zustand @xterm/xterm @xterm/addon-fit @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+npm install react@18 react-dom@18 zustand @xterm/xterm @xterm/addon-fit @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
 npm install -D electron electron-vite electron-builder vite @vitejs/plugin-react typescript vitest
-npm install -D @types/react @types/react-dom @types/node
+npm install -D @types/react@18 @types/react-dom@18 @types/node
 npm install -D tailwindcss postcss autoprefixer
 ```
+
+全部裝完後，才把 `postinstall` 補進 `package.json` 的 `scripts`，並手動執行一次：
+
+```bash
+npm pkg set scripts.postinstall="electron-builder install-app-deps"
+npx electron-builder install-app-deps
+```
+
+這一步把 `node-pty` 重新編譯成 Electron 的 ABI。缺這步，app 啟動時會出現 `NODE_MODULE_VERSION` 不符而無法載入 `node-pty`。
 
 - [ ] **Step 3: 建立建置設定檔**
 
@@ -213,50 +225,20 @@ export default defineConfig({
 })
 ```
 
-`tsconfig.json`：
+兩份獨立的 tsconfig，不使用 project references —— `composite: true` 與 `noEmit: true` 是 TypeScript 明文禁止的組合（`Composite projects may not disable emit`），而我們只做型別檢查、不需要 emit。
 
-```json
-{
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.node.json" },
-    { "path": "./tsconfig.web.json" }
-  ]
-}
-```
-
-`tsconfig.node.json`（main + preload + 測試）：
+`tsconfig.json`（renderer，同時作為編輯器的預設設定）：
 
 ```json
 {
   "compilerOptions": {
-    "composite": true,
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "types": ["node"],
-    "baseUrl": ".",
-    "paths": { "@shared/*": ["src/shared/*"] }
-  },
-  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts", "tests/**/*.ts", "*.config.ts"]
-}
-```
-
-`tsconfig.web.json`（renderer）：
-
-```json
-{
-  "compilerOptions": {
-    "composite": true,
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
@@ -266,7 +248,29 @@ export default defineConfig({
 }
 ```
 
-`tailwind.config.js` — 視覺 token 集中在此，後續 UI 任務一律引用這些名稱，不寫死色碼：
+`tsconfig.node.json`（main + preload + 測試）：
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": { "@shared/*": ["src/shared/*"] }
+  },
+  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts", "tests/**/*.ts", "*.config.ts"]
+}
+```
+
+測試檔會 import `src/renderer/` 底下的純邏輯模組（Task 2 的 reducer、Task 10 的 pty-activity、Task 11 的 fuzzy）。這些模組不碰 DOM，在 node 設定下型別檢查通過沒有問題。
+
+`tailwind.config.mjs` — 視覺 token 集中在此，後續 UI 任務一律引用這些名稱，不寫死色碼：
 
 ```js
 export default {
@@ -295,7 +299,7 @@ export default {
 }
 ```
 
-`postcss.config.js`：
+`postcss.config.mjs`：
 
 ```js
 export default { plugins: { tailwindcss: {}, autoprefixer: {} } }
@@ -436,14 +440,14 @@ describe('pickColumnColor', () => {
 describe('newCard', () => {
   it('note 未提供時為空字串，兩個時間戳相同', () => {
     const card = newCard(
-      { title: 'U19 登入重構', cwd: '/tmp/u19', command: 'claude' },
+      { title: '訂單結帳重構', cwd: '/tmp/project-a', command: 'claude' },
       'card_1',
       '2026-08-27T00:00:00.000Z',
     )
     expect(card).toEqual({
       id: 'card_1',
-      title: 'U19 登入重構',
-      cwd: '/tmp/u19',
+      title: '訂單結帳重構',
+      cwd: '/tmp/project-a',
       command: 'claude',
       note: '',
       createdAt: '2026-08-27T00:00:00.000Z',
@@ -532,7 +536,7 @@ export function createDefaultBoard(genId: () => string): Board {
 - [ ] **Step 8: 執行測試，確認通過**
 
 Run: `npm test`
-Expected: PASS — 8 個測試全綠
+Expected: PASS — 9 個測試全綠
 
 - [ ] **Step 9: 建立最小可執行的 Electron 骨架**
 
@@ -595,7 +599,7 @@ contextBridge.exposeInMainWorld('gc', {})
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
-    <title>SharkCommand</title>
+    <title>Shark Terminal</title>
   </head>
   <body>
     <div id="root"></div>
@@ -650,7 +654,7 @@ createRoot(container).render(
 export default function App(): JSX.Element {
   return (
     <div className="flex h-full items-center justify-center text-fg-dim">
-      SharkCommand
+      Shark Terminal
     </div>
   )
 }
@@ -659,7 +663,7 @@ export default function App(): JSX.Element {
 - [ ] **Step 10: 驗證開發環境可啟動**
 
 Run: `npm run dev`
-Expected: Electron 視窗開啟，深色背景，畫面中央顯示「SharkCommand」。確認後 ⌘Q 關閉。
+Expected: Electron 視窗開啟，深色背景，畫面中央顯示「Shark Terminal」。確認後 ⌘Q 關閉。
 
 Run: `npm run typecheck`
 Expected: 無錯誤
@@ -1048,7 +1052,7 @@ export function moveColumn(board: Board, columnId: string, toIndex: number): Boa
 - [ ] **Step 4: 執行測試，確認通過**
 
 Run: `npm test`
-Expected: PASS — Task 1 的 8 個加上本任務 22 個測試全綠
+Expected: PASS — Task 1 的 9 個加上本任務 22 個測試全綠
 
 - [ ] **Step 5: Commit**
 
@@ -1093,7 +1097,7 @@ import { readBranch } from '../../src/main/git'
 let root: string
 
 beforeEach(async () => {
-  root = await fs.mkdtemp(path.join(tmpdir(), 'sharkcommand-git-'))
+  root = await fs.mkdtemp(path.join(tmpdir(), 'shark-terminal-git-'))
 })
 
 afterEach(async () => {
@@ -1294,7 +1298,7 @@ detached HEAD（顯示 SHA 前 7 碼）與非 repo 目錄。"
   - `class BoardStore`
     - `constructor(filePath: string, genId?: () => string, debounceMs?: number)`
     - `load(): Promise<BoardLoadResult>` — `{ board, recoveredFrom }`，`recoveredFrom` 非 null 代表原檔損毀已備份
-    - `save(board: Board): void` — debounce（預設 500ms）
+    - `save(board: Board): void` — debounce（預設 500ms）；唯讀模式下略過並記錄
     - `flush(): Promise<void>` — 立即寫出待寫入的內容，app 結束前呼叫
 
 `debounceMs` 開放注入純粹是為了測試——真等 500ms 會讓測試變慢，而用 fake timer 又跟真實的檔案 I/O 打架（fake timer 不會等 I/O 完成）。測試傳 10ms 搭配真 timer 最穩。
@@ -1322,7 +1326,7 @@ let root: string
 let file: string
 
 beforeEach(async () => {
-  root = await fs.mkdtemp(path.join(tmpdir(), 'sharkcommand-store-'))
+  root = await fs.mkdtemp(path.join(tmpdir(), 'shark-terminal-store-'))
   file = path.join(root, 'board.json')
 })
 
@@ -1600,6 +1604,8 @@ export function reconcile(board: Board): Board {
 export class BoardStore {
   private timer: NodeJS.Timeout | null = null
   private pending: Board | null = null
+  /** 讀檔失敗且原檔可能存在時進入唯讀，避免後續寫入覆蓋掉讀不到的原檔 */
+  private readOnly = false
 
   constructor(
     private readonly filePath: string,
@@ -1611,11 +1617,23 @@ export class BoardStore {
     let raw: string
     try {
       raw = await fs.readFile(this.filePath, 'utf8')
-    } catch {
-      // 首次啟動：建立預設看板並立即落地，之後的 save 才有檔案可覆蓋
-      const board = createDefaultBoard(this.genId)
-      await this.writeAtomic(board)
-      return { board, recoveredFrom: null }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') {
+        // 首次啟動：建立預設看板並立即落地，之後的 save 才有檔案可覆蓋
+        const board = createDefaultBoard(this.genId)
+        await this.writeAtomic(board)
+        return { board, recoveredFrom: null }
+      }
+      // 檔案存在但讀不到（權限、fd 耗盡等）：絕不能覆寫它。
+      // 以預設看板讓 app 能啟動，同時進入唯讀模式擋掉後續寫入。
+      console.error('[board-store] 讀取 board.json 失敗，改以預設看板啟動並停用寫入', {
+        filePath: this.filePath,
+        code,
+        err,
+      })
+      this.readOnly = true
+      return { board: createDefaultBoard(this.genId), recoveredFrom: null }
     }
 
     let parsed: unknown
@@ -1637,15 +1655,24 @@ export class BoardStore {
 
   /** debounce——拖拉過程中 state 每幀變動，不 debounce 會狂寫磁碟 */
   save(board: Board): void {
+    if (this.readOnly) {
+      console.warn('[board-store] 目前為唯讀模式，略過此次存檔', { filePath: this.filePath })
+      return
+    }
     this.pending = board
     if (this.timer) clearTimeout(this.timer)
     this.timer = setTimeout(() => {
-      void this.flush()
+      // debounce 回呼沒有呼叫端接住，必須自己吞掉例外，
+      // 否則會成為未處理的 Promise rejection 而終止 Electron main 程序
+      void this.flush().catch((err) => {
+        console.error('[board-store] debounce 存檔失敗', { filePath: this.filePath, err })
+      })
     }, this.debounceMs)
   }
 
   /** 立即寫出待寫入內容，app 結束前呼叫以免最後一次變更遺失 */
   async flush(): Promise<void> {
+    if (this.readOnly) return
     if (this.timer) {
       clearTimeout(this.timer)
       this.timer = null
@@ -1658,14 +1685,21 @@ export class BoardStore {
 
   /** 先寫 .tmp 再 rename——rename 是原子操作，避免寫到一半中斷造成半截 JSON */
   private async writeAtomic(board: Board): Promise<void> {
-    const tmp = `${this.filePath}.tmp`
+    // 檔名帶 pid 與時間戳：併發寫入若共用同一個 tmp，較慢的一次 rename 會得到 ENOENT
+    const tmp = `${this.filePath}.${process.pid}.${Date.now()}.tmp`
     try {
       await fs.mkdir(path.dirname(this.filePath), { recursive: true })
       await fs.writeFile(tmp, JSON.stringify(board, null, 2), 'utf8')
       await fs.rename(tmp, this.filePath)
     } catch (err) {
       console.error('[board-store] 寫入 board.json 失敗', { filePath: this.filePath, err })
-      await fs.rm(tmp, { force: true })
+      // 清理暫存檔本身也可能失敗（force 只吞 ENOENT，不吞 EACCES/EPERM），
+      // 絕不可讓它把例外往外拋，否則會沿著 flush 冒泡成未處理的 rejection
+      try {
+        await fs.rm(tmp, { force: true })
+      } catch (cleanupErr) {
+        console.warn('[board-store] 清理暫存檔失敗，可能殘留 .tmp', { tmp, err: cleanupErr })
+      }
     }
   }
 
@@ -1724,7 +1758,7 @@ git commit -m "feat: board.json 持久化
     - `spawn(cardId: string, cwd: string, command: string, cols: number, rows: number): void`
     - `write(cardId: string, data: string): void`
     - `resize(cardId: string, cols: number, rows: number): void`
-    - `kill(cardId: string): void`
+    - `kill(cardId: string): void` — 只送 SIGKILL，Map 移除與 exit 廣播交給 onExit handler
     - `killAll(timeoutMs?: number): Promise<void>`
     - `has(cardId: string): boolean`
     - `onData(cb: (cardId: string, data: string) => void): void`
@@ -1805,10 +1839,10 @@ afterEach(() => {
 describe('spawn', () => {
   it('以卡片的 cwd 開 login shell，並把 command 寫進去', () => {
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp/u19', 'claude', 120, 40)
+    manager.spawn('card_a', '/tmp/project-a', 'claude', 120, 40)
 
     expect(created).toHaveLength(1)
-    expect(created[0].opts.cwd).toBe('/tmp/u19')
+    expect(created[0].opts.cwd).toBe('/tmp/project-a')
     expect(created[0].opts.args).toEqual(['-l'])
     expect(created[0].opts.cols).toBe(120)
     expect(created[0].opts.rows).toBe(40)
@@ -1996,6 +2030,10 @@ export class PtyManager {
 
     pty.onData((data) => this.dataCb?.(cardId, data))
     pty.onExit(({ exitCode }) => {
+      // 舊 pty 被重啟取代後才回報 exit 時，Map 裡已經是新的 pty。
+      // 真實 node-pty 的行程死亡回報必然非同步，因此每次重啟都會走到這裡。
+      // 只有仍是持有者的 pty 才能清除紀錄與對外廣播，否則會誤刪新 pty 並誤報已結束。
+      if (this.ptys.get(cardId) !== pty) return
       this.ptys.delete(cardId)
       this.exitCb?.(cardId, exitCode)
     })
@@ -2003,7 +2041,13 @@ export class PtyManager {
     this.ptys.set(cardId, pty)
 
     const trimmed = command.trim()
-    if (trimmed) pty.write(`${trimmed}\n`)
+    if (trimmed) {
+      try {
+        pty.write(`${trimmed}\n`)
+      } catch (err) {
+        console.warn('[pty-manager] 寫入啟動指令失敗', { cardId, command: trimmed, err })
+      }
+    }
   }
 
   write(cardId: string, data: string): void {
@@ -2012,7 +2056,12 @@ export class PtyManager {
       console.warn('[pty-manager] write 找不到對應的 pty，忽略此次輸入', { cardId })
       return
     }
-    pty.write(data)
+    try {
+      pty.write(data)
+    } catch (err) {
+      // 行程已死但 exit 尚未回報時仍可能收到輸入，不可讓例外傳到 IPC handler
+      console.warn('[pty-manager] write 失敗', { cardId, err })
+    }
   }
 
   resize(cardId: string, cols: number, rows: number): void {
@@ -2030,8 +2079,13 @@ export class PtyManager {
 
   kill(cardId: string): void {
     const pty = this.ptys.get(cardId)
-    if (!pty) return
-    this.ptys.delete(cardId)
+    if (!pty) {
+      console.warn('[pty-manager] kill 找不到對應的 pty，可能已結束或 cardId 有誤', { cardId })
+      return
+    }
+    // 不在這裡從 Map 移除：移除與 exit 廣播統一由 onExit handler 處理。
+    // 若先 delete，onExit 的持有者比對會因 Map 已無此 cardId 而必然失敗，
+    // 導致主動 kill 的 pty 永遠不會廣播 exit 事件。
     try {
       pty.kill('SIGKILL')
     } catch (err) {
@@ -2083,7 +2137,7 @@ export class PtyManager {
 - [ ] **Step 4: 執行測試，確認通過**
 
 Run: `npm test`
-Expected: PASS — 累計 4 個測試檔全綠
+Expected: PASS — 累計 5 個測試檔全綠（factory、board-reducer、git、board-store、pty-manager）
 
 - [ ] **Step 5: Commit**
 
@@ -2148,7 +2202,16 @@ export function registerIpc(
   ptyManager: PtyManager,
   getWindow: () => BrowserWindow | null,
 ): void {
-  ipcMain.handle('board:load', () => store.load())
+  // 四個 invoke handler 都補上 main 端的診斷紀錄後再 rethrow：
+  // 未捕捉的例外只會變成 renderer 端的 rejected promise，main 端不留任何線索。
+  ipcMain.handle('board:load', async () => {
+    try {
+      return await store.load()
+    } catch (err) {
+      console.error('[ipc] board:load 失敗', { err })
+      throw err
+    }
+  })
   ipcMain.handle('board:save', (_event, board: Board) => {
     store.save(board)
   })
@@ -2156,7 +2219,12 @@ export function registerIpc(
   ipcMain.handle(
     'pty:spawn',
     (_event, cardId: string, cwd: string, command: string, cols: number, rows: number) => {
-      ptyManager.spawn(cardId, cwd, command, cols, rows)
+      try {
+        ptyManager.spawn(cardId, cwd, command, cols, rows)
+      } catch (err) {
+        console.error('[ipc] pty:spawn 失敗', { cardId, cwd, command, err })
+        throw err
+      }
     },
   )
   ipcMain.on('pty:write', (_event, cardId: string, data: string) => {
@@ -2169,7 +2237,14 @@ export function registerIpc(
     ptyManager.kill(cardId)
   })
 
-  ipcMain.handle('git:branch', (_event, cwd: string) => readBranch(cwd))
+  ipcMain.handle('git:branch', async (_event, cwd: string) => {
+    try {
+      return await readBranch(cwd)
+    } catch (err) {
+      console.error('[ipc] git:branch 失敗', { cwd, err })
+      throw err
+    }
+  })
 
   ipcMain.handle('dialog:pickDirectory', async () => {
     const win = getWindow()
@@ -2181,12 +2256,17 @@ export function registerIpc(
     return result.filePaths[0]
   })
 
-  // pty 的輸出與結束事件推給 renderer
+  // pty 的輸出與結束事件推給 renderer。
+  // webContents 會在視窗的 'closed' 事件「之前」就被銷毀，此時 mainWindow 仍非 null，
+  // 只用 ?. 擋不住——對已銷毀的 webContents 呼叫 send 會同步拋例外，
+  // 在 pty 的 data callback 中拋出會讓 main 程序崩潰而跳過 before-quit 的存檔。
   ptyManager.onData((cardId, data) => {
-    getWindow()?.webContents.send('pty:data', cardId, data)
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('pty:data', cardId, data)
   })
   ptyManager.onExit((cardId, exitCode) => {
-    getWindow()?.webContents.send('pty:exit', cardId, exitCode)
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('pty:exit', cardId, exitCode)
   })
 }
 ```
@@ -2204,7 +2284,7 @@ import { BoardStore } from './board-store'
 import { PtyManager } from './pty-manager'
 import { registerIpc } from './ipc'
 
-const boardFile = join(homedir(), '.sharkcommand', 'board.json')
+const boardFile = join(homedir(), '.sharkterminal', 'board.json')
 const store = new BoardStore(boardFile)
 
 const ptyManager = new PtyManager((opts) =>
@@ -2261,7 +2341,12 @@ app.on('window-all-closed', () => {
 // 結束前先把待寫入的看板落地，再關掉所有 pty
 let cleaningUp = false
 app.on('before-quit', (event) => {
-  if (cleaningUp) return
+  if (cleaningUp) {
+    // 清理進行中一律攔截，退出交給完成後的 app.exit()；
+    // 否則使用者連按 ⌘Q 會搶在 flush 寫完之前退出
+    event.preventDefault()
+    return
+  }
   event.preventDefault()
   cleaningUp = true
   void (async () => {
@@ -2271,7 +2356,9 @@ app.on('before-quit', (event) => {
     } catch (err) {
       console.error('[main] 結束前清理失敗，仍繼續關閉', { err })
     }
-    app.quit()
+    // 用 exit 而非 quit：quit 會再次觸發 before-quit，若使用者連按兩次 ⌘Q，
+    // 第二次因 cleaningUp 已為 true 而不攔截，可能搶在 flush 完成前退出
+    app.exit()
   })()
 })
 ```
@@ -2377,15 +2464,15 @@ Run: `npm run dev`
 依序確認：
 
 1. 視窗顯示的 JSON 含四個預設欄位（`需求評估中` / `開發中` / `Review 中` / `等待 Merge`）
-2. `cat ~/.sharkcommand/board.json` — 檔案已建立且內容一致
+2. `cat ~/.sharkterminal/board.json` — 檔案已建立且內容一致
 3. 開啟 DevTools（⌥⌘I），在 Console 執行以下指令，確認終端機互動可用：
 
 ```js
 window.gc.onPtyData((id, d) => console.log('[data]', id, JSON.stringify(d)))
-await window.gc.pty.spawn('probe', window.gc.homeDir(), 'echo 你好 SharkCommand', 80, 24)
+await window.gc.pty.spawn('probe', window.gc.homeDir(), 'echo 你好 Shark Terminal', 80, 24)
 ```
 
-Expected: Console 陸續印出 shell 啟動訊息與 `你好 SharkCommand`
+Expected: Console 陸續印出 shell 啟動訊息與 `你好 Shark Terminal`
 
 4. 清理探針：`window.gc.pty.kill('probe')`
 5. ⌘Q 結束，確認 terminal 沒有殘留的 shell 程序：`pgrep -fl "zsh -l" | grep -v grep`
@@ -2489,20 +2576,34 @@ export const useAppStore = create<AppState>((set, get) => {
     void window.gc.board.save(board)
   }
 
+  /**
+   * 進行中的載入。併發呼叫共用同一個 Promise，避免較晚 resolve 的那次
+   * 用出發時的舊快照 set 整個 board，把期間的所有變更抹掉
+   * （React StrictMode 會讓 effect 跑兩次，正是這個情境）。
+   */
+  let loading: Promise<void> | null = null
+
   return {
     board: EMPTY_BOARD,
     activeCardId: null,
     loaded: false,
     recoveryNotice: null,
 
-    loadBoard: async () => {
-      try {
-        const { board, recoveredFrom } = await window.gc.board.load()
-        set({ board, loaded: true, recoveryNotice: recoveredFrom })
-      } catch (err) {
-        console.error('[app-store] 載入看板失敗，改用空白看板', { err })
-        set({ board: EMPTY_BOARD, loaded: true })
-      }
+    loadBoard: () => {
+      if (loading) return loading
+      loading = (async () => {
+        try {
+          const { board, recoveredFrom } = await window.gc.board.load()
+          set({ board, loaded: true, recoveryNotice: recoveredFrom })
+        } catch (err) {
+          console.error('[app-store] 載入看板失敗，改用空白看板', { err })
+          set({ board: EMPTY_BOARD, loaded: true })
+        } finally {
+          // 完成後釋放，讓測試之間不互相干擾，也保留未來「重新載入」的可能
+          loading = null
+        }
+      })()
+      return loading
     },
 
     setActiveCard: (cardId) => set({ activeCardId: cardId }),
@@ -2542,8 +2643,15 @@ export const useAppStore = create<AppState>((set, get) => {
     deleteColumn: (columnId) => {
       const { board, activeCardId } = get()
       const result = deleteColumn(board, columnId)
-      // 欄位連同卡片一起消失，對應的 pty 也要收掉
-      for (const cardId of result.removedCardIds) window.gc.pty.kill(cardId)
+      // 欄位連同卡片一起消失，對應的 pty 也要收掉。
+      // 逐張包 try/catch 而非整個迴圈包一次：否則第一張失敗就會跳過其餘所有卡片
+      for (const cardId of result.removedCardIds) {
+        try {
+          window.gc.pty.kill(cardId)
+        } catch (err) {
+          console.warn('[app-store] 刪除欄位時關閉終端機失敗', { columnId, cardId, err })
+        }
+      }
       if (activeCardId && result.removedCardIds.includes(activeCardId)) set({ activeCardId: null })
       persist(result.board)
     },
@@ -2758,7 +2866,7 @@ export default function CardDialog({ card, onCancel, onSubmit, onDelete }: Props
           autoFocus
           value={draft.title}
           onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-          placeholder="例如：U19 登入流程重構"
+          placeholder="例如：訂單結帳重構"
           className="mb-3 w-full rounded border border-line bg-card px-2 py-1.5 text-[13px] text-fg outline-none focus:border-line-hover"
         />
 
@@ -2784,8 +2892,11 @@ export default function CardDialog({ card, onCancel, onSubmit, onDelete }: Props
           value={draft.command}
           onChange={(e) => setDraft({ ...draft, command: e.target.value })}
           placeholder="claude"
-          className="mb-3 w-full rounded border border-line bg-card px-2 py-1.5 font-mono text-[12px] text-fg outline-none focus:border-line-hover"
+          className="w-full rounded border border-line bg-card px-2 py-1.5 font-mono text-[12px] text-fg outline-none focus:border-line-hover"
         />
+        <p className="mb-3 text-[11px] leading-4 text-fg-dim">
+          留空則只開啟 shell，不自動執行任何指令
+        </p>
 
         <label className="mb-1 block text-[11px] text-fg-dim">備註</label>
         <textarea
@@ -3037,14 +3148,14 @@ Run: `npm run dev`
 
 1. 看到四個欄位，各有 3px 色帶且顏色不同
 2. 點欄位的「＋」→ 填標題、按「選擇…」挑目錄、按儲存 → 卡片出現在該欄
-3. `cat ~/.sharkcommand/board.json` — 卡片已寫入
+3. `cat ~/.sharkterminal/board.json` — 卡片已寫入
 4. 雙擊卡片 → 開啟編輯對話框，改標題後儲存 → 卡片標題更新
 5. 編輯對話框按「刪除」→ 確認後卡片消失
 6. 雙擊欄位標題 → 可改名，Enter 生效、Esc 取消
 7. 按「＋ 新增欄位」→ 新欄位出現在最右且顏色與前一欄不同
 8. 刪除有卡片的欄位 → 確認訊息提到卡片數量，確認後欄位與卡片一起消失
 9. ⌘Q 後重開 `npm run dev` → 所有變更都還在
-10. 損毀容錯：`echo 'x' > ~/.sharkcommand/board.json` 後重開 app → 頂端出現橫幅並指出備份檔路徑，按「知道了」可關閉
+10. 損毀容錯：`echo 'x' > ~/.sharkterminal/board.json` 後重開 app → 頂端出現橫幅並指出備份檔路徑，按「知道了」可關閉
 
 Run: `npm test && npm run typecheck`
 Expected: 全綠、無型別錯誤
@@ -3145,6 +3256,8 @@ export default function CardItem({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
     data: { type: 'card', columnId },
+    // dnd-kit 的 defaultTransition 是 200ms，超出全域約束的 ≤150ms
+    transition: { duration: 150, easing: 'ease' },
   })
 
   return (
@@ -3234,6 +3347,7 @@ export default function Column({ column, home, onAddCard, onEditCard }: Props): 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
     data: { type: 'column' },
+    transition: { duration: 150, easing: 'ease' },
   })
 
   return (
@@ -3394,7 +3508,9 @@ export default function BoardPane({ home }: Props): JSX.Element {
     snapshot.current = null
 
     if (!over) {
-      commitBoard()
+      // 放開時沒有任何有效放置目標，與 Esc 取消同一類意圖：還原而非把預覽轉正
+      if (snapshot.current) restoreBoard(snapshot.current)
+      snapshot.current = null
       return
     }
 
@@ -3504,7 +3620,7 @@ Run: `npm run dev`
 6. 拖曳欄位標題可調整欄位左右順序，卡片跟著整欄移動
 7. 拖曳欄位標題以外的區域**不會**拖動欄位
 8. 單擊卡片仍能選取（不會被誤判成拖曳）
-9. 每次拖拉結束後 `cat ~/.sharkcommand/board.json` 確認順序已寫入；拖拉過程中檔案不應被反覆改寫
+9. 每次拖拉結束後 `cat ~/.sharkterminal/board.json` 確認順序已寫入；拖拉過程中檔案不應被反覆改寫
 
 Run: `npm test && npm run typecheck`
 Expected: 全綠、無型別錯誤
@@ -3632,7 +3748,7 @@ export function fitAndSync(cardId: string): void {
 
 - [ ] **Step 2: store 新增 pty 狀態與 action**
 
-在 `src/renderer/store/app-store.ts` 頂端補上 import：
+在 `src/renderer/store/app-store.ts` 頂端，把既有的 `import type { Board } from '@shared/types'` **改成**下面第一行（不是另外新增一行，否則會重複 import），並新增第二行：
 
 ```ts
 import type { Board, PtyStatus } from '@shared/types'
@@ -3654,7 +3770,13 @@ import { disposeTerminal, ensureTerminal } from '../terminal/terminal-registry'
 
 ```ts
     setPtyStatus: (cardId, status) =>
-      set((state) => ({ ptyStatus: { ...state.ptyStatus, [cardId]: status } })),
+      set((state) => {
+        // 卡片已被刪除時，延遲送達的 pty:exit 不該把它的狀態寫回來。
+        // TerminalHost 是用 ptyStatus 的 key 決定要掛載哪些終端機，
+        // 復活的 key 會生出一個永遠看不到、也永遠不會被回收的 xterm 實例。
+        if (!state.board.cards[cardId]) return state
+        return { ptyStatus: { ...state.ptyStatus, [cardId]: status } }
+      }),
 
     startPty: async (cardId) => {
       const card = get().board.cards[cardId]
@@ -3683,7 +3805,12 @@ import { disposeTerminal, ensureTerminal } from '../terminal/terminal-registry'
 
 ```ts
     deleteCard: (cardId) => {
-      window.gc.pty.kill(cardId)
+      try {
+        window.gc.pty.kill(cardId)
+      } catch (err) {
+        // kill 失敗不該擋住卡片刪除，否則使用者會看到「按了沒反應」且無錯誤訊息
+        console.warn('[app-store] 刪除卡片時關閉終端機失敗', { cardId, err })
+      }
       disposeTerminal(cardId)
       const { activeCardId } = get()
       if (activeCardId === cardId) set({ activeCardId: null })
@@ -3858,7 +3985,7 @@ export default function TerminalPane(): JSX.Element {
 ```tsx
 import { useCallback, useEffect, useRef } from 'react'
 
-const STORAGE_KEY = 'sharkcommand.splitRatio'
+const STORAGE_KEY = 'sharkterminal.splitRatio'
 const MIN_RATIO = 0.2
 const MAX_RATIO = 0.8
 
@@ -3921,7 +4048,11 @@ export default function Splitter({ onChange, onCommit }: Props): JSX.Element {
 
   return (
     <div
-      onPointerDown={() => {
+      onPointerDown={(e) => {
+        // 捕捉指標：拖曳中若指標移出視窗，pointerup 仍會送達，
+        // 否則 dragging 會卡在 true、游標卡在 row-resize，
+        // 且下一次任意 pointerup 會用過期的 lastRatio 覆寫 localStorage
+        e.currentTarget.setPointerCapture(e.pointerId)
         dragging.current = true
         document.body.style.cursor = 'row-resize'
       }}
@@ -3987,6 +4118,16 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('resize', scheduleFit)
   }, [scheduleFit])
 
+  // 必須是穩定參照：內聯匿名函式每次 render 都是新的，
+  // 會讓 Splitter 註冊 window 監聽器的 effect 在拖曳期間反覆重綁
+  const handleSplitChange = useCallback(
+    (next: number) => {
+      setRatio(next)
+      scheduleFit()
+    },
+    [scheduleFit],
+  )
+
   if (!loaded) {
     return <div className="flex h-full items-center justify-center text-fg-dim">載入中…</div>
   }
@@ -3998,13 +4139,7 @@ export default function App(): JSX.Element {
       <div style={{ flexGrow: ratio, flexBasis: 0 }} className="min-h-0">
         <BoardPane home={home} />
       </div>
-      <Splitter
-        onChange={(next) => {
-          setRatio(next)
-          scheduleFit()
-        }}
-        onCommit={scheduleFit}
-      />
+      <Splitter onChange={handleSplitChange} onCommit={scheduleFit} />
       <div style={{ flexGrow: 1 - ratio, flexBasis: 0 }} className="min-h-0">
         <TerminalPane />
       </div>
@@ -4216,14 +4351,23 @@ import { clearActivity, computeStatus } from './pty-activity'
 
     loadBranches: async () => {
       const cwds = [...new Set(Object.values(get().board.cards).map((c) => c.cwd))]
-      try {
-        const entries = await Promise.all(
-          cwds.map(async (cwd) => [cwd, await window.gc.git.branch(cwd)] as const),
-        )
-        set({ branches: Object.fromEntries(entries) })
-      } catch (err) {
-        console.warn('[app-store] 讀取 branch 失敗，卡片將不顯示 branch', { err })
+      // 用 allSettled 而非 all：單一目錄讀取失敗不該讓整個看板的 branch 都消失。
+      // git.ts 目前對所有可預期錯誤都回傳 null 不外拋，但那是它的實作細節，
+      // 這一層不該依賴它永遠不拋。
+      const results = await Promise.allSettled(
+        cwds.map(async (cwd) => [cwd, await window.gc.git.branch(cwd)] as const),
+      )
+      const entries: Array<readonly [string, string | null]> = []
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          entries.push(result.value)
+        } else {
+          console.warn('[app-store] 讀取單一目錄的 branch 失敗，該卡片暫不顯示 branch', {
+            err: result.reason,
+          })
+        }
       }
+      set({ branches: Object.fromEntries(entries) })
     },
 ```
 
@@ -4252,10 +4396,12 @@ import { clearActivity, computeStatus } from './pty-activity'
 ```tsx
 import type { PtyStatus } from '@shared/types'
 
-const STYLE: Record<PtyStatus, { color: string; label: string; breathe: boolean }> = {
-  running: { color: '#3fb950', label: '執行中', breathe: true },
-  idle: { color: '#d29922', label: '閒置', breathe: false },
-  stopped: { color: '#6e7681', label: '已停止', breathe: false },
+// 用 Tailwind token 而非 inline hex：全域約束禁止寫死色碼。
+// 必須是完整的靜態字串（不可寫成 `bg-${status}`），否則 JIT 掃不到、class 不會被產生。
+const STYLE: Record<PtyStatus, { className: string; label: string; breathe: boolean }> = {
+  running: { className: 'bg-running', label: '執行中', breathe: true },
+  idle: { className: 'bg-idle', label: '閒置', breathe: false },
+  stopped: { className: 'bg-stopped', label: '已停止', breathe: false },
 }
 
 interface Props {
@@ -4268,8 +4414,7 @@ export default function StatusDot({ status }: Props): JSX.Element {
   return (
     <span
       title={status === undefined ? '尚未啟動' : style.label}
-      style={{ backgroundColor: style.color }}
-      className={`inline-block h-2 w-2 shrink-0 rounded-full ${style.breathe ? 'animate-breathe' : ''}`}
+      className={`inline-block h-2 w-2 shrink-0 rounded-full ${style.className} ${style.breathe ? 'animate-breathe' : ''}`}
     />
   )
 }
@@ -4456,33 +4601,33 @@ import { fuzzyMatch } from '../../src/renderer/fuzzy'
 
 describe('fuzzyMatch', () => {
   it('空查詢符合任何目標', () => {
-    expect(fuzzyMatch('', 'U19 登入重構')).toBe(true)
+    expect(fuzzyMatch('', '訂單結帳重構')).toBe(true)
   })
 
   it('連續子字串符合', () => {
-    expect(fuzzyMatch('登入', 'U19 登入重構')).toBe(true)
+    expect(fuzzyMatch('結帳', '訂單結帳重構')).toBe(true)
   })
 
   it('不連續但順序正確的字元符合', () => {
-    expect(fuzzyMatch('u19構', 'U19 登入重構')).toBe(true)
+    expect(fuzzyMatch('訂構', '訂單結帳重構')).toBe(true)
     expect(fuzzyMatch('pbp', 'play-by-play 重構')).toBe(true)
   })
 
   it('忽略大小寫', () => {
-    expect(fuzzyMatch('U19', 'u19 登入重構')).toBe(true)
-    expect(fuzzyMatch('u19', 'U19 登入重構')).toBe(true)
+    expect(fuzzyMatch('API', 'api 端點調整')).toBe(true)
+    expect(fuzzyMatch('api', 'API 端點調整')).toBe(true)
   })
 
   it('順序錯誤不符合', () => {
-    expect(fuzzyMatch('構登', 'U19 登入重構')).toBe(false)
+    expect(fuzzyMatch('構訂', '訂單結帳重構')).toBe(false)
   })
 
   it('目標不含查詢字元時不符合', () => {
-    expect(fuzzyMatch('xyz', 'U19 登入重構')).toBe(false)
+    expect(fuzzyMatch('xyz', '訂單結帳重構')).toBe(false)
   })
 
   it('查詢比目標長時不符合', () => {
-    expect(fuzzyMatch('登入重構流程', '登入')).toBe(false)
+    expect(fuzzyMatch('訂單結帳重構流程', '訂單結帳')).toBe(false)
   })
 })
 ```
@@ -4512,6 +4657,16 @@ export function fuzzyMatch(query: string, target: string): boolean {
   }
   return qi === q.length
 }
+
+/**
+ * 把游標夾在 [0, rowCount-1]；rowCount 為 0 時回 0。
+ * 下界不可省：搜尋無結果時按 ↓ 會把游標設成 -1，若只做上界裁切，
+ * Math.min(-1, 非負數) 恆為 -1，游標永遠回不到 0，
+ * 使用者修正搜尋字後按 Enter 會讀到 rows[-1] 而靜默失效。
+ */
+export function clampCursor(cursor: number, rowCount: number): number {
+  return Math.max(0, Math.min(cursor, rowCount - 1))
+}
 ```
 
 - [ ] **Step 4: 執行測試，確認通過**
@@ -4524,11 +4679,11 @@ Expected: PASS — 7 個測試全綠
 `src/renderer/CommandPalette.tsx`：
 
 ```tsx
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Card } from '@shared/types'
 import StatusDot from './board/StatusDot'
 import { shortenPath } from './board/CardItem'
-import { fuzzyMatch } from './fuzzy'
+import { clampCursor, fuzzyMatch } from './fuzzy'
 import { useAppStore } from './store/app-store'
 
 interface Props {
@@ -4543,7 +4698,6 @@ export default function CommandPalette({ open, onClose, home }: Props): JSX.Elem
   const setActiveCard = useAppStore((s) => s.setActiveCard)
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
-  const listRef = useRef<HTMLDivElement>(null)
 
   /** 依看板順序列出卡片，並附上所屬欄位名稱 */
   const rows = useMemo(() => {
@@ -4552,6 +4706,11 @@ export default function CommandPalette({ open, onClose, home }: Props): JSX.Elem
       for (const cardId of column.cardIds) {
         const card = board.cards[cardId]
         if (card) all.push({ card, columnTitle: column.title })
+        else
+          console.warn('[CommandPalette] 欄位含有查無對應卡片的 id，已略過', {
+            columnId: column.id,
+            cardId,
+          })
       }
     }
     return all.filter(
@@ -4567,7 +4726,7 @@ export default function CommandPalette({ open, onClose, home }: Props): JSX.Elem
   }, [open])
 
   useEffect(() => {
-    setCursor((c) => Math.min(c, Math.max(0, rows.length - 1)))
+    setCursor((c) => clampCursor(c, rows.length))
   }, [rows.length])
 
   if (!open) return null
@@ -4607,7 +4766,7 @@ export default function CommandPalette({ open, onClose, home }: Props): JSX.Elem
           className="w-full border-b border-line bg-column px-4 py-3 text-[14px] text-fg outline-none"
         />
 
-        <div ref={listRef} className="max-h-[320px] overflow-y-auto">
+        <div className="max-h-[320px] overflow-y-auto">
           {rows.length === 0 ? (
             <div className="px-4 py-6 text-center text-[12px] text-fg-dim">沒有符合的卡片</div>
           ) : (
@@ -4677,8 +4836,8 @@ import CommandPalette from './CommandPalette'
 `electron-builder.yml`：
 
 ```yaml
-appId: com.shark.sharkcommand
-productName: SharkCommand
+appId: com.shark.sharkterminal
+productName: Shark Terminal
 
 directories:
   output: release
@@ -4702,7 +4861,7 @@ mac:
 - [ ] **Step 8: 打包並驗證**
 
 Run: `npm run build:mac`
-Expected: `release/SharkCommand-0.1.0-universal.dmg` 產生
+Expected: `release/SharkTerminal-0.1.0-arm64.dmg` 與 `release/SharkTerminal-0.1.0.dmg` 產生（檔名以 artifactName 維持英文，避免中文檔名的編碼問題）
 
 **若 universal 打包因 `node-pty` 失敗**（native addon 的 universal 合併偶爾會在 lipo 階段出錯），把 `electron-builder.yml` 的 `arch` 改成分別出兩包：
 
@@ -4718,9 +4877,9 @@ Expected: `release/SharkCommand-0.1.0-universal.dmg` 產生
 
 ```bash
 open release/
-# 掛載 dmg、把 SharkCommand.app 拖進 Applications
-xattr -dr com.apple.quarantine /Applications/SharkCommand.app
-open /Applications/SharkCommand.app
+# 掛載 dmg、把 Shark Terminal.app 拖進 Applications
+xattr -dr com.apple.quarantine "/Applications/Shark Terminal.app"
+open "/Applications/Shark Terminal.app"
 ```
 
 Expected: app 正常啟動，能建立卡片並啟動終端機執行 `claude`（這一步是在驗證打包後的 `node-pty` 確實可用）
@@ -4730,13 +4889,13 @@ Expected: app 正常啟動，能建立卡片並啟動終端機執行 `claude`（
 `README.md`：
 
 ````markdown
-# SharkCommand
+# Shark Terminal
 
 以 Trello 式看板管理多個 Claude Code session 的 macOS 應用。欄位代表工作階段，卡片代表一個內嵌終端機 session，拖拉卡片即可推進階段。
 
 ## 為什麼做這個
 
-同時跑十幾個 Claude Code session 時，終端機的分頁是一維水平排開的：看不出哪個在哪個階段，也分不清哪個分頁在做什麼。SharkCommand 用二維看板取代那條 tab bar。
+同時跑十幾個 Claude Code session 時，終端機的分頁是一維水平排開的：看不出哪個在哪個階段，也分不清哪個分頁在做什麼。Shark Terminal用二維看板取代那條 tab bar。
 
 ## 功能
 
@@ -4766,18 +4925,18 @@ npm run build:mac # 打包成 .dmg
 
 ## 安裝（給拿到 .dmg 的人）
 
-1. 掛載 `.dmg`，把 `SharkCommand.app` 拖進「應用程式」
+1. 掛載 `.dmg`，把 `Shark Terminal.app` 拖進「應用程式」
 2. 這個 app 沒有經過 Apple 簽名，第一次開啟會被 Gatekeeper 擋下並顯示「無法驗證開發者」。執行以下指令解除，一次就好：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/SharkCommand.app
+xattr -dr com.apple.quarantine "/Applications/Shark Terminal.app"
 ```
 
 3. 正常開啟
 
 ## 資料存放
 
-看板資料存在 `~/.sharkcommand/board.json`，純文字 JSON，可自行編輯或備份。檔案損毀時會自動備份成 `board.json.corrupt-<timestamp>` 並回退成預設看板。
+看板資料存在 `~/.sharkterminal/board.json`，純文字 JSON，可自行編輯或備份。檔案損毀時會自動備份成 `board.json.corrupt-<timestamp>` 並回退成預設看板。
 
 ## 已知限制
 
