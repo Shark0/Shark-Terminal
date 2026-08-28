@@ -21,8 +21,8 @@
 
 | 機型 | 下載 |
 | --- | --- |
-| **Apple Silicon**（M1 / M2 / M3 / M4 系列） | [`SharkTerminal-0.1.0-arm64.dmg`](https://github.com/Shark0/Shark-Terminal/releases/download/v0.1.0/SharkTerminal-0.1.0-arm64.dmg) |
-| **Intel** | [`SharkTerminal-0.1.0-x64.dmg`](https://github.com/Shark0/Shark-Terminal/releases/download/v0.1.0/SharkTerminal-0.1.0-x64.dmg) |
+| **Apple Silicon**（M1 / M2 / M3 / M4 系列） | [`SharkTerminal-0.1.1-arm64.dmg`](https://github.com/Shark0/Shark-Terminal/releases/download/v0.1.1/SharkTerminal-0.1.1-arm64.dmg) |
+| **Intel** | [`SharkTerminal-0.1.1-x64.dmg`](https://github.com/Shark0/Shark-Terminal/releases/download/v0.1.1/SharkTerminal-0.1.1-x64.dmg) |
 
 不確定自己是哪種機型，可點左上角  選單 → 關於這台 Mac 確認晶片型號。
 
