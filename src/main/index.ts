@@ -8,7 +8,7 @@ import { registerIpc } from './ipc'
 
 // dev 模式執行的是 Electron.app bundle，macOS 選單列會顯示 "Electron"。
 // 明確設定名稱讓選單列與「關於」視窗顯示正確的 app 名稱。
-app.setName('追鯊令')
+app.setName('Shark Terminal')
 
 const isDev = Boolean(process.env.ELECTRON_RENDERER_URL)
 // dev 用獨立看板檔，避免與正在使用中的正式版互相覆寫

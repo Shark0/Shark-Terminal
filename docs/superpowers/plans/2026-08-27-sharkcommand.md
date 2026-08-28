@@ -1,4 +1,4 @@
-# 追鯊令 Implementation Plan
+# Shark Terminal Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -599,7 +599,7 @@ contextBridge.exposeInMainWorld('gc', {})
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
-    <title>追鯊令</title>
+    <title>Shark Terminal</title>
   </head>
   <body>
     <div id="root"></div>
@@ -654,7 +654,7 @@ createRoot(container).render(
 export default function App(): JSX.Element {
   return (
     <div className="flex h-full items-center justify-center text-fg-dim">
-      追鯊令
+      Shark Terminal
     </div>
   )
 }
@@ -663,7 +663,7 @@ export default function App(): JSX.Element {
 - [ ] **Step 10: 驗證開發環境可啟動**
 
 Run: `npm run dev`
-Expected: Electron 視窗開啟，深色背景，畫面中央顯示「追鯊令」。確認後 ⌘Q 關閉。
+Expected: Electron 視窗開啟，深色背景，畫面中央顯示「Shark Terminal」。確認後 ⌘Q 關閉。
 
 Run: `npm run typecheck`
 Expected: 無錯誤
@@ -2469,10 +2469,10 @@ Run: `npm run dev`
 
 ```js
 window.gc.onPtyData((id, d) => console.log('[data]', id, JSON.stringify(d)))
-await window.gc.pty.spawn('probe', window.gc.homeDir(), 'echo 你好 追鯊令', 80, 24)
+await window.gc.pty.spawn('probe', window.gc.homeDir(), 'echo 你好 Shark Terminal', 80, 24)
 ```
 
-Expected: Console 陸續印出 shell 啟動訊息與 `你好 追鯊令`
+Expected: Console 陸續印出 shell 啟動訊息與 `你好 Shark Terminal`
 
 4. 清理探針：`window.gc.pty.kill('probe')`
 5. ⌘Q 結束，確認 terminal 沒有殘留的 shell 程序：`pgrep -fl "zsh -l" | grep -v grep`
@@ -4837,7 +4837,7 @@ import CommandPalette from './CommandPalette'
 
 ```yaml
 appId: com.shark.sharkterminal
-productName: 追鯊令
+productName: Shark Terminal
 
 directories:
   output: release
@@ -4877,9 +4877,9 @@ Expected: `release/SharkTerminal-0.1.0-arm64.dmg` 與 `release/SharkTerminal-0.1
 
 ```bash
 open release/
-# 掛載 dmg、把 追鯊令.app 拖進 Applications
-xattr -dr com.apple.quarantine "/Applications/追鯊令.app"
-open "/Applications/追鯊令.app"
+# 掛載 dmg、把 Shark Terminal.app 拖進 Applications
+xattr -dr com.apple.quarantine "/Applications/Shark Terminal.app"
+open "/Applications/Shark Terminal.app"
 ```
 
 Expected: app 正常啟動，能建立卡片並啟動終端機執行 `claude`（這一步是在驗證打包後的 `node-pty` 確實可用）
@@ -4889,13 +4889,13 @@ Expected: app 正常啟動，能建立卡片並啟動終端機執行 `claude`（
 `README.md`：
 
 ````markdown
-# 追鯊令
+# Shark Terminal
 
 以 Trello 式看板管理多個 Claude Code session 的 macOS 應用。欄位代表工作階段，卡片代表一個內嵌終端機 session，拖拉卡片即可推進階段。
 
 ## 為什麼做這個
 
-同時跑十幾個 Claude Code session 時，終端機的分頁是一維水平排開的：看不出哪個在哪個階段，也分不清哪個分頁在做什麼。追鯊令用二維看板取代那條 tab bar。
+同時跑十幾個 Claude Code session 時，終端機的分頁是一維水平排開的：看不出哪個在哪個階段，也分不清哪個分頁在做什麼。Shark Terminal用二維看板取代那條 tab bar。
 
 ## 功能
 
@@ -4925,11 +4925,11 @@ npm run build:mac # 打包成 .dmg
 
 ## 安裝（給拿到 .dmg 的人）
 
-1. 掛載 `.dmg`，把 `追鯊令.app` 拖進「應用程式」
+1. 掛載 `.dmg`，把 `Shark Terminal.app` 拖進「應用程式」
 2. 這個 app 沒有經過 Apple 簽名，第一次開啟會被 Gatekeeper 擋下並顯示「無法驗證開發者」。執行以下指令解除，一次就好：
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/追鯊令.app"
+xattr -dr com.apple.quarantine "/Applications/Shark Terminal.app"
 ```
 
 3. 正常開啟

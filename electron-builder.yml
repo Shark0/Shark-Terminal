@@ -1,5 +1,5 @@
 appId: com.shark.sharkterminal
-productName: 追鯊令
+productName: Shark Terminal
 
 directories:
   output: release

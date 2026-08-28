@@ -1,4 +1,4 @@
-# 追鯊令 設計文件
+# Shark Terminal 設計文件
 
 日期：2026-08-27
 
@@ -10,7 +10,7 @@
 2. **階段不可控** — 每個 session 進行到哪個工作階段（需求評估 / 開發 / Review / 等待 Merge）沒有地方記錄
 3. **分頁水平排開** — 終端機的 tab bar 是一維的，塞滿後既看不出結構，也分不清哪個分頁在做什麼
 
-追鯊令是一個 macOS 桌面應用，用看板的二維佈局取代終端機一維的 tab bar：**欄位代表工作階段，卡片代表一個 Claude Code session**，卡片可拖拉跨欄以推進階段。
+Shark Terminal是一個 macOS 桌面應用，用看板的二維佈局取代終端機一維的 tab bar：**欄位代表工作階段，卡片代表一個 Claude Code session**，卡片可拖拉跨欄以推進階段。
 
 ### 成功標準
 
@@ -235,7 +235,7 @@ GUI 加子程序的應用，E2E 投報率低。策略是**測純邏輯，UI 手�
 **Gatekeeper**：未經 Apple 簽名的 app，首次開啟會被擋下並顯示「無法驗證開發者」。README 須寫明解法：
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/追鯊令.app"
+xattr -dr com.apple.quarantine "/Applications/Shark Terminal.app"
 ```
 
 執行一次即可。若日後需散佈給非工程師，再考慮 Apple Developer Program（$99/年）的簽名與公證，屆時下載即可開啟。
