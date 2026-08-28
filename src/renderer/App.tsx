@@ -14,17 +14,21 @@ export default function App(): JSX.Element {
   const loaded = useAppStore((s) => s.loaded)
   const loadBoard = useAppStore((s) => s.loadBoard)
   const setPtyStatus = useAppStore((s) => s.setPtyStatus)
+  const setWriteFailedNotice = useAppStore((s) => s.setWriteFailedNotice)
   const [home, setHome] = useState('')
   const [ratio, setRatio] = useState(loadSplitRatio)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const resizeTimer = useRef<number | null>(null)
+  /** 看板區＋分隔線＋終端機區的共同容器，Splitter 靠它的 rect 反推自由空間 */
+  const splitContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     void loadBoard()
     setHome(window.gc.homeDir())
   }, [loadBoard])
 
-  // pty 的輸出直接寫進對應的 xterm；結束時把卡片轉為 stopped
+  // pty 的輸出直接寫進對應的 xterm；結束時把卡片轉為 stopped；
+  // 看板寫入失敗即時顯示警告，不必等下一次編輯觸發的 IPC 回應才知道
   useEffect(() => {
     const offData = window.gc.onPtyData((cardId, data) => {
       getTerminal(cardId)?.term.write(data)
@@ -33,11 +37,16 @@ export default function App(): JSX.Element {
     const offExit = window.gc.onPtyExit((cardId) => {
       setPtyStatus(cardId, 'stopped')
     })
+    const offWriteError = window.gc.onBoardWriteError((message) => {
+      console.error('[App] 看板寫入失敗', { message })
+      setWriteFailedNotice()
+    })
     return () => {
       offData()
       offExit()
+      offWriteError()
     }
-  }, [setPtyStatus])
+  }, [setPtyStatus, setWriteFailedNotice])
 
   // 狀態燈：500ms 輪詢一次，store 只在狀態真的變化時才更新
   useEffect(() => {
@@ -103,13 +112,18 @@ export default function App(): JSX.Element {
       {/* 可拖曳區域，同時為 hiddenInset 的紅綠燈按鈕留出空間 */}
       <div className="drag-region h-7 shrink-0" />
       <RecoveryNotice />
-      {/* 用 flexGrow 而非百分比高度，橫幅出現時上下比例不會跑掉 */}
-      <div style={{ flexGrow: ratio, flexBasis: 0 }} className="min-h-0">
-        <BoardPane home={home} />
-      </div>
-      <Splitter onChange={handleSplitChange} onCommit={scheduleFit} />
-      <div style={{ flexGrow: 1 - ratio, flexBasis: 0 }} className="min-h-0">
-        <TerminalPane />
+      {/* Splitter 用這個容器的 getBoundingClientRect() 反推自由空間——
+          drag-region、RecoveryNotice 的高度都不需要讓 Splitter 知道，
+          之後這兩者的樣式再怎麼變也不用回頭改算式 */}
+      <div ref={splitContainerRef} className="flex min-h-0 flex-1 flex-col">
+        {/* 用 flexGrow 而非百分比高度，橫幅出現時上下比例不會跑掉 */}
+        <div style={{ flexGrow: ratio, flexBasis: 0 }} className="min-h-0">
+          <BoardPane home={home} />
+        </div>
+        <Splitter onChange={handleSplitChange} onCommit={scheduleFit} containerRef={splitContainerRef} />
+        <div style={{ flexGrow: 1 - ratio, flexBasis: 0 }} className="min-h-0">
+          <TerminalPane />
+        </div>
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} home={home} />
     </div>

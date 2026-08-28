@@ -57,6 +57,8 @@ export interface GcApi {
   }
   onPtyData(cb: (cardId: string, data: string) => void): () => void
   onPtyExit(cb: (cardId: string, exitCode: number) => void): () => void
+  /** 看板寫入失敗時即時推播，不必等下一次 board:save 的回應才知道 */
+  onBoardWriteError(cb: (message: string) => void): () => void
   git: {
     branch(cwd: string): Promise<string | null>
   }

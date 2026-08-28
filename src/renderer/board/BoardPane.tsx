@@ -69,8 +69,12 @@ export default function BoardPane({ home }: Props): JSX.Element {
     const overColumn = current.columns.find((c) => c.id === overId)
 
     if (overColumn) {
-      // 拖到欄位本身（空欄或欄位空白處）→ 插到末端
-      if (columnIdOfCard(current, cardId) === overColumn.id) return
+      // 拖到欄位本身（空欄或欄位空白處）→ 插到末端。
+      // 同欄且已在末端才是真的 no-op；否則要允許拖到自己欄位的空白處移到末端
+      // （moveCardIn 內部會先把卡片從原位置移除再 clamp 插入索引，同欄移動也是正確的）
+      const currentColumnId = columnIdOfCard(current, cardId)
+      const lastId = overColumn.cardIds[overColumn.cardIds.length - 1]
+      if (currentColumnId === overColumn.id && lastId === cardId) return
       previewBoard(moveCardIn(current, cardId, overColumn.id, overColumn.cardIds.length))
       return
     }

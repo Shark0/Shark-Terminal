@@ -41,6 +41,8 @@ interface AppState {
   loadBoard: () => Promise<void>
   setActiveCard: (cardId: string | null) => void
   dismissRecoveryNotice: () => void
+  /** main 端透過 onBoardWriteError 主動推播寫入失敗時呼叫 */
+  setWriteFailedNotice: () => void
 
   addCard: (columnId: string, input: CardInput) => void
   updateCard: (cardId: string, patch: CardPatch) => void
@@ -71,7 +73,7 @@ const EMPTY_BOARD: Board = { version: 1, columns: [], cards: {} }
 export const useAppStore = create<AppState>((set, get) => {
   /** 寫入失敗必須讓使用者知道，否則會持續編輯一份永遠不會落地的看板 */
   const notifyIfWriteFailed = (result: { writeFailed: boolean }): void => {
-    if (result.writeFailed) set({ writeFailedNotice: true })
+    if (result.writeFailed) get().setWriteFailedNotice()
   }
 
   /** 唯一的寫入路徑：更新 state 後立即請 main 存檔（main 端會 debounce） */
@@ -115,6 +117,8 @@ export const useAppStore = create<AppState>((set, get) => {
     setActiveCard: (cardId) => set({ activeCardId: cardId }),
 
     dismissRecoveryNotice: () => set({ recoveryNotice: null }),
+
+    setWriteFailedNotice: () => set({ writeFailedNotice: true }),
 
     addCard: (columnId, input) => {
       const card = newCard(input, crypto.randomUUID(), new Date().toISOString())
@@ -251,7 +255,12 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     stopPty: (cardId) => {
-      window.gc.pty.kill(cardId)
+      try {
+        window.gc.pty.kill(cardId)
+      } catch (err) {
+        // kill 失敗不該擋住狀態更新，否則卡片會一直顯示執行中，UI 卻已經沒有對應的 pty
+        console.warn('[app-store] 停止終端機失敗', { cardId, err })
+      }
       get().setPtyStatus(cardId, 'stopped')
     },
 

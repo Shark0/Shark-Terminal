@@ -30,6 +30,13 @@ const api: GcApi = {
       ipcRenderer.off('pty:exit', listener)
     }
   },
+  onBoardWriteError: (cb) => {
+    const listener = (_event: unknown, message: string): void => cb(message)
+    ipcRenderer.on('board:write-error', listener)
+    return () => {
+      ipcRenderer.off('board:write-error', listener)
+    }
+  },
   git: {
     branch: (cwd) => ipcRenderer.invoke('git:branch', cwd) as Promise<string | null>,
   },

@@ -203,6 +203,41 @@ describe('deleteCard', () => {
   })
 })
 
+describe('stopPty', () => {
+  it('正常路徑：kill 後把狀態設為 stopped', () => {
+    useAppStore.setState({
+      board: fixtureBoard(),
+      ptyStatus: { card_a: 'running' },
+      loaded: true,
+    })
+
+    useAppStore.getState().stopPty('card_a')
+
+    expect(gc.pty.kill).toHaveBeenCalledWith('card_a')
+    expect(useAppStore.getState().ptyStatus.card_a).toBe('stopped')
+  })
+
+  it('pty.kill 拋出時仍會把狀態設為 stopped，並記錄 console.warn——\
+否則卡片會一直顯示執行中，UI 卻已經沒有對應的 pty', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    gc.pty.kill.mockImplementationOnce(() => {
+      throw new Error('kill 失敗')
+    })
+    useAppStore.setState({
+      board: fixtureBoard(),
+      ptyStatus: { card_a: 'running' },
+      loaded: true,
+    })
+
+    useAppStore.getState().stopPty('card_a')
+
+    expect(useAppStore.getState().ptyStatus.card_a).toBe('stopped')
+    expect(warnSpy).toHaveBeenCalled()
+
+    warnSpy.mockRestore()
+  })
+})
+
 describe('setPtyStatus', () => {
   it('卡片不存在時是 no-op，ptyStatus 完全不變', () => {
     useAppStore.setState({ board: fixtureBoard(), ptyStatus: { card_a: 'running' }, loaded: true })

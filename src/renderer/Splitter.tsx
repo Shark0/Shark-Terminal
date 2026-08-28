@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, type RefObject } from 'react'
+import { MAX_RATIO, MIN_RATIO, computeRatio } from './splitter-math'
 
 const STORAGE_KEY = 'sharkterminal.splitRatio'
-const MIN_RATIO = 0.2
-const MAX_RATIO = 0.8
 
 export function loadSplitRatio(): number {
   try {
@@ -21,20 +20,32 @@ interface Props {
   onChange: (ratio: number) => void
   /** 拖曳結束時呼叫，用來觸發 fit */
   onCommit: () => void
+  /**
+   * 指向「看板區＋這條分隔線＋終端機區」三者共同的父容器，供 computeRatio 使用。
+   * 容器與分隔線的高度都用 getBoundingClientRect() 現場量測，不寫死任何 px，
+   * 拖曳條、橫幅等固定元素的樣式之後再怎麼變都不需要回頭改算式。
+   */
+  containerRef: RefObject<HTMLDivElement>
 }
 
-export default function Splitter({ onChange, onCommit }: Props): JSX.Element {
+export default function Splitter({ onChange, onCommit, containerRef }: Props): JSX.Element {
   const dragging = useRef(false)
   const lastRatio = useRef<number | null>(null)
+  const selfRef = useRef<HTMLDivElement>(null)
 
   const onPointerMove = useCallback(
     (e: PointerEvent) => {
       if (!dragging.current) return
-      const ratio = Math.min(MAX_RATIO, Math.max(MIN_RATIO, e.clientY / window.innerHeight))
+      const containerRect = containerRef.current?.getBoundingClientRect()
+      const splitterHeight = selfRef.current?.getBoundingClientRect().height
+      if (!containerRect || splitterHeight === undefined) return
+      if (containerRect.height <= splitterHeight) return
+
+      const ratio = computeRatio(e.clientY, containerRect.top, containerRect.height, splitterHeight)
       lastRatio.current = ratio
       onChange(ratio)
     },
-    [onChange],
+    [containerRef, onChange],
   )
 
   const onPointerUp = useCallback(() => {
@@ -63,6 +74,7 @@ export default function Splitter({ onChange, onCommit }: Props): JSX.Element {
 
   return (
     <div
+      ref={selfRef}
       onPointerDown={(e) => {
         // 捕捉指標：拖曳中若指標移出視窗，pointerup 仍會送達，
         // 否則 dragging 會卡在 true、游標卡在 row-resize

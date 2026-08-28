@@ -1,14 +1,13 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Card, PtyStatus } from '@shared/types'
+import { shortenPath } from './path-utils'
 import StatusDot from './StatusDot'
 
-/** 把家目錄縮寫成 ~，路徑過長時只留最後兩層 */
-export function shortenPath(cwd: string, home: string): string {
-  const path = cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd
-  const parts = path.split('/')
-  return parts.length <= 3 ? path : `…/${parts.slice(-2).join('/')}`
-}
+// shortenPath 搬到獨立的 .ts 檔案（tests/renderer 底下的測試用 tsconfig.node.json 檢查，
+// 沒有開 jsx，import 這個 .tsx 檔案的具名匯出會編譯失敗），這裡重新 export 讓既有的
+// import { shortenPath } from './board/CardItem' 呼叫點不用跟著改路徑
+export { shortenPath }
 
 interface Props {
   card: Card

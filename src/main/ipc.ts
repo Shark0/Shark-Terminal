@@ -79,4 +79,10 @@ export function registerIpc(
     const win = getWindow()
     if (win && !win.isDestroyed()) win.webContents.send('pty:exit', cardId, exitCode)
   })
+
+  // 看板寫入失敗即時推給 renderer，不必等下一次 board:save 才知道
+  store.onWriteError((message) => {
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('board:write-error', message)
+  })
 }

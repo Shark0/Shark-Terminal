@@ -14,6 +14,7 @@ asarUnpack:
 
 mac:
   category: public.app-category.developer-tools
+  icon: build/icon.icns
   # productName 是中文，但 .dmg 檔名保持英文——中文檔名在分享、下載、命令列引用時容易出編碼問題
   artifactName: SharkTerminal-${version}-${arch}.${ext}
   target:

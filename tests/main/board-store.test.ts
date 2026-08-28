@@ -244,6 +244,54 @@ describe('BoardStore.save', () => {
 
     writeFileSpy.mockRestore()
   })
+
+  it('連續兩次寫入串接而非覆蓋：flush() 會等到兩次都真正完成', async () => {
+    const store = new BoardStore(file, DEBOUNCE)
+    const boardA = sampleBoard()
+    boardA.columns[0].title = 'A'
+    const boardB = sampleBoard()
+    boardB.columns[0].title = 'B'
+
+    // 每次 writeFile 都卡住，用一個佇列收集釋放函式，讓測試逐一控制放行時機
+    const releases: Array<() => void> = []
+    const realWriteFile = fs.writeFile.bind(fs)
+    const writeFileSpy = vi
+      .spyOn(fs, 'writeFile')
+      .mockImplementation(async (...args: Parameters<typeof fs.writeFile>) => {
+        await new Promise<void>((resolve) => releases.push(resolve))
+        return realWriteFile(...args)
+      })
+
+    store.save(boardA)
+    await wait(DEBOUNCE * 3) // debounce 觸發，A 的 writeAtomic 已開始並卡住
+
+    store.save(boardB)
+    await wait(DEBOUNCE * 3) // debounce 再觸發，B 的 flush() 應該串接在 A 後面，不會覆蓋
+
+    // B 必須等 A 完成才會真的呼叫 writeFile——如果是覆蓋（舊寫法）而非串接，
+    // 這裡 releases 會立刻變成 2（B 提前開始寫），下面的斷言會抓到
+    expect(releases).toHaveLength(1)
+
+    let flushResolved = false
+    const flushPromise = store.flush().then(() => {
+      flushResolved = true
+    })
+
+    releases[0]() // 放行 A
+    await wait(20) // 讓 A 完成、觸發 B 開始並卡住
+
+    expect(flushResolved).toBe(false) // B 還沒完成，flush() 不該提早 resolve
+    expect(releases).toHaveLength(2)
+
+    releases[1]() // 放行 B
+    await flushPromise
+    expect(flushResolved).toBe(true)
+
+    const written = JSON.parse(await fs.readFile(file, 'utf8')) as Board
+    expect(written.columns[0].title).toBe('B') // 最終內容是最後一次寫入的
+
+    writeFileSpy.mockRestore()
+  })
 })
 
 describe('BoardStore 唯讀模式與清理失敗', () => {

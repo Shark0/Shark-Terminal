@@ -82,6 +82,7 @@ export class BoardStore {
   private writing: Promise<void> | null = null
   /** 最近一次寫入是否失敗（磁碟滿、權限變更等）；供 UI 提示使用 */
   private writeFailed = false
+  private errorCb: ((message: string) => void) | null = null
 
   constructor(
     private readonly filePath: string,
@@ -91,6 +92,16 @@ export class BoardStore {
   /** 最近一次寫入是否處於失敗狀態，供 IPC 查詢 */
   get hasWriteFailure(): boolean {
     return this.writeFailed
+  }
+
+  /**
+   * 寫入失敗時即時通知外部（main 端會轉發給 renderer）。
+   * 補上這個是因為 board:save 的 IPC 回應只能反映「上一輪」debounce 的結果，
+   * 若使用者最後一次編輯剛好觸發失敗、之後就直接關閉 app，那次失敗永遠不會
+   * 透過下一次 IPC 呼叫被帶回 renderer——推播才能保證即時送達。
+   */
+  onWriteError(cb: (message: string) => void): void {
+    this.errorCb = cb
   }
 
   async load(): Promise<BoardLoadResult> {
@@ -163,7 +174,13 @@ export class BoardStore {
     const board = this.pending
     if (board) {
       this.pending = null
-      this.writing = this.writeAtomic(board)
+      // 串接而非覆蓋：前一次寫入可能還在進行，覆蓋參照會讓後面的 flush() 等不到它
+      const nextWriting: Promise<void> = (this.writing ?? Promise.resolve()).then(async () => {
+        await this.writeAtomic(board)
+        // 只有當自己仍是目前最新的一條鏈時才清空，避免清掉後面已經排進來的鏈參照
+        if (this.writing === nextWriting) this.writing = null
+      })
+      this.writing = nextWriting
     }
     if (this.writing) await this.writing
   }
@@ -183,14 +200,14 @@ export class BoardStore {
       console.error('[board-store] 寫入 board.json 失敗', { filePath: this.filePath, err })
       // 這次寫入沒有真的落地，必須讓 UI 知道，否則使用者會持續編輯一份永遠存不進去的看板
       this.writeFailed = true
+      const message = err instanceof Error ? err.message : String(err)
+      this.errorCb?.(`看板寫入失敗：${message}`)
       // 清理暫存檔本身也可能失敗（權限等），絕不可讓它把例外往外拋
       try {
         await fs.rm(tmp, { force: true })
       } catch (cleanupErr) {
         console.warn('[board-store] 清理暫存檔失敗，可能殘留 .tmp', { tmp, err: cleanupErr })
       }
-    } finally {
-      this.writing = null
     }
   }
 

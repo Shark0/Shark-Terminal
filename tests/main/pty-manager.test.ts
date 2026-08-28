@@ -73,6 +73,19 @@ afterEach(() => {
 })
 
 describe('spawn', () => {
+  it('SHELL 環境變數為空字串時 fallback 到 /bin/zsh（?? 對空字串沒有替換效果，須用 ||）', () => {
+    const original = process.env.SHELL
+    process.env.SHELL = ''
+    try {
+      const { created, manager } = setup()
+      manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+      expect(created[0].opts.file).toBe('/bin/zsh')
+    } finally {
+      if (original === undefined) delete process.env.SHELL
+      else process.env.SHELL = original
+    }
+  })
+
   it('以卡片的 cwd 開 login shell，並把 command 寫進去', () => {
     const { created, manager } = setup()
     manager.spawn('card_a', '/tmp/project-a', 'claude', 120, 40)

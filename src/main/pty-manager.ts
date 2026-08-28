@@ -34,7 +34,9 @@ export class PtyManager {
       this.kill(cardId)
     }
 
-    const shell = process.env.SHELL ?? '/bin/zsh'
+    // 用 || 而非 ?? ——某些 launchd/CI/沙盒環境會 export 空字串的 SHELL，
+    // ?? 只在 null/undefined 時才替換，空字串會原樣傳給 node-pty 導致 exec 失敗
+    const shell = process.env.SHELL || '/bin/zsh'
     const pty = this.spawner({
       file: shell,
       args: ['-l'],
