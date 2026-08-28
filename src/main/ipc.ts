@@ -19,6 +19,9 @@ export function registerIpc(
   })
   ipcMain.handle('board:save', (_event, board: Board) => {
     store.save(board)
+    // save() 是 debounce 非同步落地，這裡回報的是「目前為止」最近一次寫入的成敗，
+    // 供 renderer 判斷要不要顯示寫入失敗警告
+    return { writeFailed: store.hasWriteFailure }
   })
 
   ipcMain.handle(

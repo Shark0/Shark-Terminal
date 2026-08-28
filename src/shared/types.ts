@@ -46,7 +46,8 @@ export interface BoardLoadResult {
 export interface GcApi {
   board: {
     load(): Promise<BoardLoadResult>
-    save(board: Board): Promise<void>
+    /** writeFailed 為 true 代表這次寫入失敗（磁碟滿、權限變更等），供 UI 提示使用 */
+    save(board: Board): Promise<{ writeFailed: boolean }>
   }
   pty: {
     spawn(cardId: string, cwd: string, command: string, cols: number, rows: number): Promise<void>

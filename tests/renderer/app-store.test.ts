@@ -42,6 +42,8 @@ vi.stubGlobal('window', { gc })
 beforeEach(() => {
   gc.board.load.mockReset()
   gc.board.save.mockReset()
+  // 預設寫入成功；要測寫入失敗通知的案例自行覆寫這個 mock
+  gc.board.save.mockResolvedValue({ writeFailed: false })
   gc.pty.kill.mockReset()
   gc.git.branch.mockReset()
   // zustand store 在測試間必須重置，避免前一個測試的 board/activeCardId 汙染下一個測試
@@ -50,6 +52,8 @@ beforeEach(() => {
     activeCardId: null,
     loaded: false,
     recoveryNotice: null,
+    readOnlyNotice: false,
+    writeFailedNotice: false,
     ptyStatus: {},
     branches: {},
   })
@@ -350,5 +354,40 @@ describe('previewBoard / commitBoard / restoreBoard', () => {
 
     expect(useAppStore.getState().board).toEqual(snapshot)
     expect(gc.board.save).not.toHaveBeenCalled()
+  })
+})
+
+describe('writeFailedNotice', () => {
+  it('persist（addCard）路徑：save 回報 writeFailed 時設定 writeFailedNotice', async () => {
+    gc.board.save.mockResolvedValue({ writeFailed: true })
+    useAppStore.setState({ board: fixtureBoard(), loaded: true })
+
+    useAppStore.getState().addCard('col_1', { title: '新卡片', cwd: '/tmp/new', command: 'claude' })
+    // persist 是 fire-and-forget，等 microtask 讓 .then() 跑完
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useAppStore.getState().writeFailedNotice).toBe(true)
+  })
+
+  it('commitBoard 路徑：save 回報 writeFailed 時同樣設定 writeFailedNotice', async () => {
+    gc.board.save.mockResolvedValue({ writeFailed: true })
+    useAppStore.setState({ board: fixtureBoard(), loaded: true })
+
+    useAppStore.getState().commitBoard()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useAppStore.getState().writeFailedNotice).toBe(true)
+  })
+
+  it('save 成功時不會設定 writeFailedNotice', async () => {
+    useAppStore.setState({ board: fixtureBoard(), loaded: true })
+
+    useAppStore.getState().addCard('col_1', { title: '新卡片', cwd: '/tmp/new', command: 'claude' })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useAppStore.getState().writeFailedNotice).toBe(false)
   })
 })

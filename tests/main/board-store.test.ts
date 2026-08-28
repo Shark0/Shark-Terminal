@@ -203,6 +203,47 @@ describe('BoardStore.save', () => {
     await store.flush()
     expect((await fs.readdir(root)).filter((f) => f.endsWith('.tmp'))).toEqual([])
   })
+
+  it('flush() 會等待 debounce 觸發後仍在進行中的寫入，不會提早返回', async () => {
+    const store = new BoardStore(file, DEBOUNCE)
+    const board = sampleBoard()
+
+    // 卡住 writeFile：模擬慢磁碟，寫入在 debounce 觸發後尚未完成
+    let releaseWrite: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      releaseWrite = resolve
+    })
+    const realWriteFile = fs.writeFile.bind(fs)
+    const writeFileSpy = vi
+      .spyOn(fs, 'writeFile')
+      .mockImplementation(async (...args: Parameters<typeof fs.writeFile>) => {
+        await gate
+        return realWriteFile(...args)
+      })
+
+    store.save(board)
+    // 等 debounce 觸發：此時內部的 flush() 已呼叫 writeAtomic，但卡在 gate 尚未完成
+    await wait(DEBOUNCE * 3)
+
+    let flushResolved = false
+    const flushPromise = store.flush().then(() => {
+      flushResolved = true
+    })
+
+    // 這裡如果 flush() 沒有等待進行中的寫入，會在此時就已經 resolve——
+    // 這正是舊實作的問題：pending 已被前一次 flush() 清空，第二次 flush() 誤判無事可做
+    await wait(20)
+    expect(flushResolved).toBe(false)
+
+    releaseWrite()
+    await flushPromise
+    expect(flushResolved).toBe(true)
+
+    const written = JSON.parse(await fs.readFile(file, 'utf8')) as Board
+    expect(written).toEqual(board)
+
+    writeFileSpy.mockRestore()
+  })
 })
 
 describe('BoardStore 唯讀模式與清理失敗', () => {

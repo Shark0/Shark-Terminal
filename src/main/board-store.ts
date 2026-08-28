@@ -78,11 +78,20 @@ export class BoardStore {
   private readOnly = false
   /** tmp 檔名遞增序號，同一毫秒內的併發呼叫也不會撞名（Date.now() 沒有這個保證） */
   private tmpSeq = 0
+  /** 進行中的寫入，flush() 必須等它完成才能讓 app 安全退出 */
+  private writing: Promise<void> | null = null
+  /** 最近一次寫入是否失敗（磁碟滿、權限變更等）；供 UI 提示使用 */
+  private writeFailed = false
 
   constructor(
     private readonly filePath: string,
     private readonly debounceMs: number = SAVE_DEBOUNCE_MS,
   ) {}
+
+  /** 最近一次寫入是否處於失敗狀態，供 IPC 查詢 */
+  get hasWriteFailure(): boolean {
+    return this.writeFailed
+  }
 
   async load(): Promise<BoardLoadResult> {
     let raw: string
@@ -139,7 +148,12 @@ export class BoardStore {
     }, this.debounceMs)
   }
 
-  /** 立即寫出待寫入內容，app 結束前呼叫以免最後一次變更遺失 */
+  /**
+   * 立即寫出待寫入內容，app 結束前呼叫以免最後一次變更遺失。
+   * 即使目前沒有待寫入內容，也要等前一次尚未完成的寫入——debounce 計時器可能剛好
+   * 搶先觸發過一次 flush()，那次的 writeAtomic 還在跑，這裡不等的話 app.exit()
+   * 會在寫入中途把程序砍掉，留下半截 .tmp 檔或舊內容。
+   */
   async flush(): Promise<void> {
     if (this.readOnly) return
     if (this.timer) {
@@ -147,9 +161,11 @@ export class BoardStore {
       this.timer = null
     }
     const board = this.pending
-    if (!board) return
-    this.pending = null
-    await this.writeAtomic(board)
+    if (board) {
+      this.pending = null
+      this.writing = this.writeAtomic(board)
+    }
+    if (this.writing) await this.writing
   }
 
   /**
@@ -162,14 +178,19 @@ export class BoardStore {
       await fs.mkdir(path.dirname(this.filePath), { recursive: true })
       await fs.writeFile(tmp, JSON.stringify(board, null, 2), 'utf8')
       await fs.rename(tmp, this.filePath)
+      this.writeFailed = false
     } catch (err) {
       console.error('[board-store] 寫入 board.json 失敗', { filePath: this.filePath, err })
+      // 這次寫入沒有真的落地，必須讓 UI 知道，否則使用者會持續編輯一份永遠存不進去的看板
+      this.writeFailed = true
       // 清理暫存檔本身也可能失敗（權限等），絕不可讓它把例外往外拋
       try {
         await fs.rm(tmp, { force: true })
       } catch (cleanupErr) {
         console.warn('[board-store] 清理暫存檔失敗，可能殘留 .tmp', { tmp, err: cleanupErr })
       }
+    } finally {
+      this.writing = null
     }
   }
 

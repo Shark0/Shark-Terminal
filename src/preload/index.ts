@@ -5,7 +5,8 @@ import type { Board, BoardLoadResult, GcApi } from '@shared/types'
 const api: GcApi = {
   board: {
     load: () => ipcRenderer.invoke('board:load') as Promise<BoardLoadResult>,
-    save: (board) => ipcRenderer.invoke('board:save', board) as Promise<void>,
+    save: (board) =>
+      ipcRenderer.invoke('board:save', board) as Promise<{ writeFailed: boolean }>,
   },
   pty: {
     spawn: (cardId, cwd, command, cols, rows) =>

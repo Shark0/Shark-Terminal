@@ -31,6 +31,8 @@ interface AppState {
   recoveryNotice: string | null
   /** true 代表看板讀檔失敗、目前為唯讀模式，任何變更都不會存檔 */
   readOnlyNotice: boolean
+  /** true 代表曾經寫入失敗（磁碟滿、權限變更等）；一旦為 true 就不會自動消失，需要使用者知道 */
+  writeFailedNotice: boolean
   /** key 為 cardId；沒有鍵代表從未啟動過 */
   ptyStatus: Record<string, PtyStatus>
   /** key 為 cwd，多張卡片指向同一目錄時共用 */
@@ -67,10 +69,15 @@ interface AppState {
 const EMPTY_BOARD: Board = { version: 1, columns: [], cards: {} }
 
 export const useAppStore = create<AppState>((set, get) => {
+  /** 寫入失敗必須讓使用者知道，否則會持續編輯一份永遠不會落地的看板 */
+  const notifyIfWriteFailed = (result: { writeFailed: boolean }): void => {
+    if (result.writeFailed) set({ writeFailedNotice: true })
+  }
+
   /** 唯一的寫入路徑：更新 state 後立即請 main 存檔（main 端會 debounce） */
   const persist = (board: Board): void => {
     set({ board })
-    void window.gc.board.save(board)
+    void window.gc.board.save(board).then(notifyIfWriteFailed)
   }
 
   /**
@@ -85,6 +92,7 @@ export const useAppStore = create<AppState>((set, get) => {
     loaded: false,
     recoveryNotice: null,
     readOnlyNotice: false,
+    writeFailedNotice: false,
     ptyStatus: {},
     branches: {},
 
@@ -250,7 +258,9 @@ export const useAppStore = create<AppState>((set, get) => {
     previewBoard: (board) => set({ board }),
 
     commitBoard: () => {
-      void window.gc.board.save(get().board)
+      // 跟 persist 走同一個 window.gc.board.save，同樣要接住寫入失敗的通知——
+      // 否則拖拉完成這條路徑仍會靜默吞掉失敗
+      void window.gc.board.save(get().board).then(notifyIfWriteFailed)
     },
 
     restoreBoard: (board) => set({ board }),

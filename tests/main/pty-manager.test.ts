@@ -9,6 +9,9 @@ class FakePty {
   rows = 0
   /** 測試用開關：設為 true 時 write() 會拋錯，模擬底層 pty 寫入失敗 */
   failWrite = false
+  /** 測試用開關：設為 true 時下一次 kill() 呼叫會拋錯（模擬送信號失敗），且用完即消 */
+  failNextKill = false
+  killCallCount = 0
   private dataCb: ((data: string) => void) | null = null
   private exitCb: ((e: { exitCode: number; signal?: number }) => void) | null = null
 
@@ -38,6 +41,11 @@ class FakePty {
   }
 
   kill(signal?: string) {
+    this.killCallCount++
+    if (this.failNextKill) {
+      this.failNextKill = false
+      throw new Error('kill 失敗（模擬）')
+    }
     this.killed.push(signal ?? 'SIGHUP')
   }
 
@@ -266,5 +274,28 @@ describe('killAll', () => {
   it('沒有任何 pty 時立即完成', async () => {
     const { manager } = setup()
     await expect(manager.killAll(500)).resolves.toBeUndefined()
+  })
+
+  it('spawn 覆蓋時若 kill 舊 pty 失敗，killAll 仍會再次嘗試終止它，不留孤兒', async () => {
+    const { created, manager } = setup()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    created[0].failNextKill = true
+    manager.spawn('card_a', '/tmp', 'claude', 80, 24) // 觸發覆蓋前的 kill，這次會拋錯
+
+    expect(created).toHaveLength(2)
+    // 第一次 kill 因為 failNextKill 而拋錯，沒有真的送出信號
+    expect(created[0].killed).toEqual([])
+    expect(created[0].killCallCount).toBe(1)
+
+    // timeoutMs 用小值，避免真實計時器拖慢測試——孤兒重試邏輯跟計時器等待無關
+    await manager.killAll(10)
+
+    // killAll 應該再嘗試一次舊 pty 的 kill（這次不會拋錯，因為 failNextKill 已消耗）
+    expect(created[0].killCallCount).toBe(2)
+    expect(created[0].killed).toContain('SIGKILL')
+
+    warn.mockRestore()
   })
 })

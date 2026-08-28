@@ -16,6 +16,8 @@ const KILL_TIMEOUT_MS = 500
 /** 所有 pty 的唯一擁有者。spawner 由外部注入，測試才能替換成 fake。 */
 export class PtyManager {
   private readonly ptys = new Map<string, IPty>()
+  /** kill 失敗、已從 ptys 移除但可能仍存活的 pty，killAll 時要再試一次 */
+  private readonly orphans = new Set<IPty>()
   private dataCb: ((cardId: string, data: string) => void) | null = null
   private exitCb: ((cardId: string, exitCode: number) => void) | null = null
 
@@ -100,35 +102,50 @@ export class PtyManager {
     try {
       pty.kill('SIGKILL')
     } catch (err) {
-      console.warn('[pty-manager] kill 失敗', { cardId, err })
+      // 送信號失敗代表這個 pty 可能仍存活，記下來讓 killAll 有機會再試，
+      // 否則 spawn 覆蓋 Map 之後就再也觸及不到它，變成孤兒程序
+      console.warn('[pty-manager] kill 失敗，列入孤兒清單', { cardId, err })
+      this.orphans.add(pty)
     }
   }
 
   /** app 結束時呼叫：全部 SIGTERM，逾時後對仍存活者 SIGKILL */
   async killAll(timeoutMs: number = KILL_TIMEOUT_MS): Promise<void> {
     const ids = [...this.ptys.keys()]
-    if (ids.length === 0) return
 
-    for (const id of ids) {
-      try {
-        this.ptys.get(id)?.kill('SIGTERM')
-      } catch (err) {
-        console.warn('[pty-manager] 送出 SIGTERM 失敗', { cardId: id, err })
+    if (ids.length > 0) {
+      for (const id of ids) {
+        try {
+          this.ptys.get(id)?.kill('SIGTERM')
+        } catch (err) {
+          console.warn('[pty-manager] 送出 SIGTERM 失敗', { cardId: id, err })
+        }
+      }
+
+      await new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
+
+      for (const id of ids) {
+        const pty = this.ptys.get(id)
+        if (!pty) continue
+        this.ptys.delete(id)
+        try {
+          pty.kill('SIGKILL')
+        } catch (err) {
+          console.warn('[pty-manager] 送出 SIGKILL 失敗', { cardId: id, err })
+        }
       }
     }
 
-    await new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
-
-    for (const id of ids) {
-      const pty = this.ptys.get(id)
-      if (!pty) continue
-      this.ptys.delete(id)
+    // 最後處理 kill 曾經失敗的孤兒——這些已經不在 ptys 裡，上面的迴圈觸及不到。
+    // 孤兒已經在先前的 kill() 嘗試過 SIGKILL，這裡直接重試，不需要再走一次 SIGTERM 寬限期
+    for (const pty of this.orphans) {
       try {
         pty.kill('SIGKILL')
       } catch (err) {
-        console.warn('[pty-manager] 送出 SIGKILL 失敗', { cardId: id, err })
+        console.warn('[pty-manager] 孤兒 pty 仍無法終止', { err })
       }
     }
+    this.orphans.clear()
   }
 
   has(cardId: string): boolean {
