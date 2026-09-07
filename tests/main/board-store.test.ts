@@ -26,7 +26,7 @@ function escapeRegExp(value: string): string {
 /** createDefaultBoard() 現在回傳空看板，這裡自己組一個帶一欄一卡的看板供測試用 */
 function sampleBoard(): Board {
   const column = newColumn('欄位', '#58a6ff', 'col_1')
-  const card = newCard({ title: 'T', cwd: '/tmp', command: 'claude' }, 'card_1', '2026-08-27T00:00:00.000Z')
+  const card = newCard({ title: 'T', cwd: '/tmp' }, 'card_1', '2026-08-27T00:00:00.000Z')
   column.cardIds.push(card.id)
   return { version: 1, columns: [column], cards: { [card.id]: card } }
 }
@@ -34,6 +34,30 @@ function sampleBoard(): Board {
 describe('isValidBoard', () => {
   it('接受合法看板', () => {
     expect(isValidBoard(sampleBoard())).toBe(true)
+  })
+
+  it('舊版 board.json 多出來的 command 欄位不影響合法性（升版後啟動指令已內建）', () => {
+    const board = sampleBoard()
+    ;(board.cards.card_1 as unknown as Record<string, unknown>).command = 'claude'
+    expect(isValidBoard(board)).toBe(true)
+  })
+
+  it('卡片可帶 worktree 字串欄位', () => {
+    const board = sampleBoard()
+    board.cards.card_1 = { ...board.cards.card_1, worktree: '/tmp/.worktrees/feat' }
+    expect(isValidBoard(board)).toBe(true)
+  })
+
+  it('worktree 為 null（手改 board.json 清空）也接受，不可因此把整份看板當成損毀', () => {
+    const board = sampleBoard()
+    ;(board.cards.card_1 as unknown as Record<string, unknown>).worktree = null
+    expect(isValidBoard(board)).toBe(true)
+  })
+
+  it('worktree 不是字串時拒絕', () => {
+    const board = sampleBoard()
+    ;(board.cards.card_1 as unknown as Record<string, unknown>).worktree = 123
+    expect(isValidBoard(board)).toBe(false)
   })
 
   it.each([
@@ -61,7 +85,7 @@ describe('reconcile', () => {
   it('把不屬於任何欄位的孤兒卡片放進第一欄', () => {
     const board = sampleBoard()
     board.cards.card_orphan = newCard(
-      { title: '孤兒', cwd: '/tmp', command: 'claude' },
+      { title: '孤兒', cwd: '/tmp' },
       'card_orphan',
       '2026-08-27T00:00:00.000Z',
     )

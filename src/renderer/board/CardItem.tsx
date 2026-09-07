@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Card, PtyStatus } from '@shared/types'
+import { cardBadge } from './badge'
 import { shortenPath } from './path-utils'
 import StatusDot from './StatusDot'
 
@@ -29,6 +30,8 @@ export default function CardItem({
   onSelect,
   onEdit,
 }: Props): JSX.Element {
+  const badge = cardBadge(card, branch)
+
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
     // 欄位資訊不從這裡讀——BoardPane 是用 columnIdOfCard 從 board 狀態推導，
@@ -71,9 +74,9 @@ export default function CardItem({
       </div>
       <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] leading-4 text-fg-dim">
         <span className="min-w-0 truncate">{shortenPath(card.cwd, home)}</span>
-        {branch && (
-          <span className="shrink-0 truncate rounded bg-base px-1 text-[10px]" title={branch}>
-            {branch}
+        {badge && (
+          <span className="shrink-0 truncate rounded bg-base px-1 text-[10px]" title={badge.title}>
+            {badge.text}
           </span>
         )}
       </div>

@@ -1,6 +1,6 @@
 import type { Board, Card, Column } from '@shared/types'
 
-export type CardPatch = Partial<Pick<Card, 'title' | 'cwd' | 'command' | 'note'>>
+export type CardPatch = Partial<Pick<Card, 'title' | 'cwd' | 'note' | 'worktree'>>
 export type ColumnPatch = Partial<Pick<Column, 'title' | 'color'>>
 
 export function addCard(board: Board, columnId: string, card: Card): Board {

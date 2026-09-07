@@ -16,7 +16,7 @@ const NOW = '2026-08-27T00:00:00.000Z'
 const LATER = '2026-08-27T09:30:00.000Z'
 
 function card(id: string, title = id): ReturnType<typeof newCard> {
-  return newCard({ title, cwd: `/tmp/${id}`, command: 'claude' }, id, NOW)
+  return newCard({ title, cwd: `/tmp/${id}` }, id, NOW)
 }
 
 /** col_0 需求評估中[card_a, card_b] / col_1 開發中[card_c] / col_2 Review 中[] / col_3 等待 Merge[] */
@@ -62,6 +62,11 @@ describe('updateCard', () => {
     expect(b.cards.card_a.cwd).toBe('/tmp/card_a')
     expect(b.cards.card_a.createdAt).toBe(NOW)
     expect(b.cards.card_a.updatedAt).toBe(LATER)
+  })
+
+  it('可寫入 worktree（session 掃描偵測到的 worktree 根目錄）', () => {
+    const b = updateCard(fixture(), 'card_a', { worktree: '/tmp/card_a/.worktrees/feat' }, LATER)
+    expect(b.cards.card_a.worktree).toBe('/tmp/card_a/.worktrees/feat')
   })
 
   it('卡片不存在時原樣回傳', () => {

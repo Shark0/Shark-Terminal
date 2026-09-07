@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { COLUMN_COLORS, type Board } from '@shared/types'
 import { newCard, newColumn } from '@shared/factory'
-import { addCard as reducerAddCard } from '../../src/renderer/store/board-reducer'
+import { addCard as reducerAddCard, moveCard as reducerMoveCard } from '../../src/renderer/store/board-reducer'
 import { useAppStore } from '../../src/renderer/store/app-store'
 
 const NOW = '2026-08-27T00:00:00.000Z'
@@ -23,7 +23,7 @@ function fixtureBoard(): Board {
   b = reducerAddCard(
     b,
     'col_0',
-    newCard({ title: 'card_a', cwd: '/tmp/a', command: 'claude' }, 'card_a', NOW),
+    newCard({ title: 'card_a', cwd: '/tmp/a' }, 'card_a', NOW),
   )
   return b
 }
@@ -116,12 +116,12 @@ describe('loadBranches', () => {
     board = reducerAddCard(
       board,
       'col_0',
-      newCard({ title: 'card_ok', cwd: '/tmp/ok', command: 'claude' }, 'card_ok', NOW),
+      newCard({ title: 'card_ok', cwd: '/tmp/ok' }, 'card_ok', NOW),
     )
     board = reducerAddCard(
       board,
       'col_0',
-      newCard({ title: 'card_fail', cwd: '/tmp/fail', command: 'claude' }, 'card_fail', NOW),
+      newCard({ title: 'card_fail', cwd: '/tmp/fail' }, 'card_fail', NOW),
     )
     useAppStore.setState({ board })
 
@@ -144,7 +144,7 @@ describe('addCard', () => {
   it('呼叫 window.gc.board.save 一次，且傳入的 board 真的含有新卡片', () => {
     useAppStore.setState({ board: fixtureBoard(), loaded: true })
 
-    useAppStore.getState().addCard('col_1', { title: '新卡片', cwd: '/tmp/new', command: 'claude' })
+    useAppStore.getState().addCard('col_1', { title: '新卡片', cwd: '/tmp/new' })
 
     expect(gc.board.save).toHaveBeenCalledTimes(1)
     const savedBoard = gc.board.save.mock.calls[0][0] as Board
@@ -175,7 +175,7 @@ describe('deleteCard', () => {
     board = reducerAddCard(
       board,
       'col_0',
-      newCard({ title: 'card_b', cwd: '/tmp/b', command: 'claude' }, 'card_b', NOW),
+      newCard({ title: 'card_b', cwd: '/tmp/b' }, 'card_b', NOW),
     )
     useAppStore.setState({ board, activeCardId: 'card_b', loaded: true })
 
@@ -265,7 +265,7 @@ describe('deleteColumn', () => {
     board = reducerAddCard(
       board,
       'col_0',
-      newCard({ title: 'card_b', cwd: '/tmp/b', command: 'claude' }, 'card_b', NOW),
+      newCard({ title: 'card_b', cwd: '/tmp/b' }, 'card_b', NOW),
     )
     useAppStore.setState({ board, activeCardId: 'card_b', loaded: true })
 
@@ -294,7 +294,7 @@ describe('deleteColumn', () => {
     board = reducerAddCard(
       board,
       'col_0',
-      newCard({ title: 'card_b', cwd: '/tmp/b', command: 'claude' }, 'card_b', NOW),
+      newCard({ title: 'card_b', cwd: '/tmp/b' }, 'card_b', NOW),
     )
     useAppStore.setState({ board, activeCardId: null, loaded: true })
     gc.pty.kill.mockImplementationOnce(() => {
@@ -317,7 +317,7 @@ describe('deleteColumn', () => {
     board = reducerAddCard(
       board,
       'col_0',
-      newCard({ title: 'card_b', cwd: '/tmp/b', command: 'claude' }, 'card_b', NOW),
+      newCard({ title: 'card_b', cwd: '/tmp/b' }, 'card_b', NOW),
     )
     useAppStore.setState({
       board,
@@ -348,7 +348,7 @@ describe('previewBoard / commitBoard / restoreBoard', () => {
     const previewed = reducerAddCard(
       original,
       'col_1',
-      newCard({ title: 'preview_card', cwd: '/tmp/preview', command: 'claude' }, 'card_preview', NOW),
+      newCard({ title: 'preview_card', cwd: '/tmp/preview' }, 'card_preview', NOW),
     )
     useAppStore.setState({ board: original, loaded: true })
 
@@ -364,7 +364,7 @@ describe('previewBoard / commitBoard / restoreBoard', () => {
     const previewed = reducerAddCard(
       original,
       'col_1',
-      newCard({ title: 'preview_card', cwd: '/tmp/preview', command: 'claude' }, 'card_preview', NOW),
+      newCard({ title: 'preview_card', cwd: '/tmp/preview' }, 'card_preview', NOW),
     )
     useAppStore.setState({ board: original, loaded: true })
     useAppStore.getState().previewBoard(previewed)
@@ -375,20 +375,32 @@ describe('previewBoard / commitBoard / restoreBoard', () => {
     expect(gc.board.save).toHaveBeenCalledWith(previewed)
   })
 
-  it('restoreBoard 還原 state，且不存檔（取消操作不該留下痕跡）', () => {
+  it('restoreBoard 還原欄位排列並存檔，覆蓋掉拖曳途中可能已落地的預覽版面', () => {
     const snapshot = fixtureBoard()
-    const previewed = reducerAddCard(
-      snapshot,
-      'col_1',
-      newCard({ title: 'preview_card', cwd: '/tmp/preview', command: 'claude' }, 'card_preview', NOW),
-    )
+    const previewed = reducerMoveCard(snapshot, 'card_a', 'col_1', 0)
     useAppStore.setState({ board: snapshot, loaded: true })
     useAppStore.getState().previewBoard(previewed)
 
     useAppStore.getState().restoreBoard(snapshot)
 
     expect(useAppStore.getState().board).toEqual(snapshot)
-    expect(gc.board.save).not.toHaveBeenCalled()
+    // 拖曳途中若有 worktree 推播觸發 persist，磁碟上會是預覽版面；還原必須也落地
+    expect(gc.board.save).toHaveBeenCalledTimes(1)
+    expect(gc.board.save).toHaveBeenCalledWith(snapshot)
+  })
+
+  it('restoreBoard 保留拖曳期間寫進卡片的資料（例如 worktree 推播），只還原欄位排列', () => {
+    const snapshot = fixtureBoard()
+    useAppStore.setState({ board: snapshot, loaded: true })
+    useAppStore.getState().previewBoard(snapshot)
+    useAppStore.getState().updateCard('card_a', { worktree: '/tmp/a/.worktrees/x' })
+
+    useAppStore.getState().restoreBoard(snapshot)
+
+    const restored = useAppStore.getState().board
+    expect(restored.columns).toEqual(snapshot.columns)
+    expect(restored.cards.card_a.worktree).toBe('/tmp/a/.worktrees/x')
+    expect(gc.board.save).toHaveBeenLastCalledWith(restored)
   })
 })
 
@@ -397,7 +409,7 @@ describe('writeFailedNotice', () => {
     gc.board.save.mockResolvedValue({ writeFailed: true })
     useAppStore.setState({ board: fixtureBoard(), loaded: true })
 
-    useAppStore.getState().addCard('col_1', { title: '新卡片', cwd: '/tmp/new', command: 'claude' })
+    useAppStore.getState().addCard('col_1', { title: '新卡片', cwd: '/tmp/new' })
     // persist 是 fire-and-forget，等 microtask 讓 .then() 跑完
     await Promise.resolve()
     await Promise.resolve()
@@ -419,7 +431,7 @@ describe('writeFailedNotice', () => {
   it('save 成功時不會設定 writeFailedNotice', async () => {
     useAppStore.setState({ board: fixtureBoard(), loaded: true })
 
-    useAppStore.getState().addCard('col_1', { title: '新卡片', cwd: '/tmp/new', command: 'claude' })
+    useAppStore.getState().addCard('col_1', { title: '新卡片', cwd: '/tmp/new' })
     await Promise.resolve()
     await Promise.resolve()
 

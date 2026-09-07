@@ -4,7 +4,6 @@ import type { Card } from '@shared/types'
 export interface CardDraft {
   title: string
   cwd: string
-  command: string
   note: string
 }
 
@@ -20,7 +19,6 @@ export default function CardDialog({ card, onCancel, onSubmit, onDelete }: Props
   const [draft, setDraft] = useState<CardDraft>({
     title: card?.title ?? '',
     cwd: card?.cwd ?? '',
-    command: card?.command ?? 'claude',
     note: card?.note ?? '',
   })
 
@@ -79,17 +77,6 @@ export default function CardDialog({ card, onCancel, onSubmit, onDelete }: Props
             選擇…
           </button>
         </div>
-
-        <label className="mb-1 block text-[11px] text-fg-dim">啟動指令</label>
-        <input
-          value={draft.command}
-          onChange={(e) => setDraft({ ...draft, command: e.target.value })}
-          placeholder="claude"
-          className="w-full rounded border border-line bg-card px-2 py-1.5 font-mono text-[12px] text-fg outline-none focus:border-line-hover"
-        />
-        <p className="mb-3 text-[11px] leading-4 text-fg-dim">
-          留空則只開啟 shell，不自動執行任何指令
-        </p>
 
         <label className="mb-1 block text-[11px] text-fg-dim">備註</label>
         <textarea

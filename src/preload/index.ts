@@ -9,8 +9,10 @@ const api: GcApi = {
       ipcRenderer.invoke('board:save', board) as Promise<{ writeFailed: boolean }>,
   },
   pty: {
-    spawn: (cardId, cwd, command, cols, rows) =>
-      ipcRenderer.invoke('pty:spawn', cardId, cwd, command, cols, rows) as Promise<void>,
+    spawn: (cardId, cwd, cols, rows) =>
+      ipcRenderer.invoke('pty:spawn', cardId, cwd, cols, rows) as Promise<void>,
+    knownWorktrees: () =>
+      ipcRenderer.invoke('pty:worktrees') as Promise<Array<{ cardId: string; worktree: string }>>,
     write: (cardId, data) => ipcRenderer.send('pty:write', cardId, data),
     resize: (cardId, cols, rows) => ipcRenderer.send('pty:resize', cardId, cols, rows),
     kill: (cardId) => ipcRenderer.send('pty:kill', cardId),
@@ -28,6 +30,14 @@ const api: GcApi = {
     ipcRenderer.on('pty:exit', listener)
     return () => {
       ipcRenderer.off('pty:exit', listener)
+    }
+  },
+  onPtyWorktree: (cb) => {
+    const listener = (_event: unknown, cardId: string, worktree: string | null): void =>
+      cb(cardId, worktree)
+    ipcRenderer.on('pty:worktree', listener)
+    return () => {
+      ipcRenderer.off('pty:worktree', listener)
     }
   },
   onBoardWriteError: (cb) => {

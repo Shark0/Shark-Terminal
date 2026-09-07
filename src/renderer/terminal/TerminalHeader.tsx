@@ -1,4 +1,5 @@
 import type { Card, PtyStatus } from '@shared/types'
+import { cardBadge } from '../board/badge'
 import { shortenPath } from '../board/path-utils'
 import { useAppStore } from '../store/app-store'
 
@@ -13,6 +14,7 @@ export default function TerminalHeader({ card, status, home }: Props): JSX.Eleme
   const stopPty = useAppStore((s) => s.stopPty)
   const branch = useAppStore((s) => s.branches[card.cwd])
   const alive = status === 'running' || status === 'idle'
+  const badge = cardBadge(card, branch)
 
   return (
     // 逐邊指定顏色而非用 border-line 一次設四邊——後者是 border-color 簡寫，
@@ -22,9 +24,9 @@ export default function TerminalHeader({ card, status, home }: Props): JSX.Eleme
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg-dim">
         {shortenPath(card.cwd, home)}
       </span>
-      {branch && (
-        <span className="shrink-0 truncate rounded bg-base px-1 text-[10px] text-fg-dim" title={branch}>
-          {branch}
+      {badge && (
+        <span className="shrink-0 truncate rounded bg-base px-1 text-[10px] text-fg-dim" title={badge.title}>
+          {badge.text}
         </span>
       )}
       {alive ? (

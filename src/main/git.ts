@@ -26,8 +26,8 @@ async function findGitEntry(cwd: string): Promise<string | null> {
   }
 }
 
-/** .git 為目錄時直接回傳；為檔案時解析其中的 gitdir 指向（支援相對路徑） */
-async function resolveGitDir(gitEntry: string): Promise<string | null> {
+/** .git 為目錄時直接回傳；為檔案時解析其中的 gitdir 指向（支援相對路徑）。scan-deps 判斷 worktree 也用它 */
+export async function resolveGitDir(gitEntry: string): Promise<string | null> {
   try {
     const stat = await fs.stat(gitEntry)
     if (stat.isDirectory()) return gitEntry

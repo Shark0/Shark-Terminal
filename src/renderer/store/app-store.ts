@@ -19,7 +19,6 @@ import { clearActivity, computeStatus } from './pty-activity'
 export interface CardInput {
   title: string
   cwd: string
-  command: string
   note?: string
 }
 
@@ -64,8 +63,8 @@ interface AppState {
   previewBoard: (board: Board) => void
   /** 拖拉結束，把目前 board 存檔 */
   commitBoard: () => void
-  /** 取消拖拉，還原成拖拉前的 snapshot */
-  restoreBoard: (board: Board) => void
+  /** 取消拖拉，還原成拖拉前的欄位排列並存檔；期間寫進卡片的資料（worktree 推播）保留 */
+  restoreBoard: (snapshot: Board) => void
 }
 
 const EMPTY_BOARD: Board = { version: 1, columns: [], cards: {} }
@@ -242,7 +241,7 @@ export const useAppStore = create<AppState>((set, get) => {
       // 先確保 xterm 存在，才能拿到正確的 cols/rows 開 pty
       const { term } = ensureTerminal(cardId)
       try {
-        await window.gc.pty.spawn(cardId, card.cwd, card.command, term.cols, term.rows)
+        await window.gc.pty.spawn(cardId, card.cwd, term.cols, term.rows)
         get().setPtyStatus(cardId, 'running')
       } catch (err) {
         console.error('[app-store] 啟動終端機失敗', { cardId, cwd: card.cwd, err })
@@ -272,6 +271,10 @@ export const useAppStore = create<AppState>((set, get) => {
       void window.gc.board.save(get().board).then(notifyIfWriteFailed)
     },
 
-    restoreBoard: (board) => set({ board }),
+    restoreBoard: (snapshot) => {
+      // 拖曳途中 worktree 推播會經 updateCard persist 預覽版面，磁碟上可能已是預覽排列，
+      // 還原也必須落地；但卡片本身的資料要用現在的，否則那次推播就遺失了
+      persist({ ...snapshot, cards: get().board.cards })
+    },
   }
 })

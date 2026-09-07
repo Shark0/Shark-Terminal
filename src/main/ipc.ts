@@ -1,12 +1,14 @@
-import { type BrowserWindow, dialog, ipcMain } from 'electron'
+import { type BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { Board } from '@shared/types'
 import type { BoardStore } from './board-store'
 import type { PtyManager } from './pty-manager'
+import type { SessionScanner } from './session-scan'
 import { readBranch } from './git'
 
 export function registerIpc(
   store: BoardStore,
   ptyManager: PtyManager,
+  scanner: SessionScanner,
   getWindow: () => BrowserWindow | null,
 ): void {
   ipcMain.handle('board:load', async () => {
@@ -24,17 +26,15 @@ export function registerIpc(
     return { writeFailed: store.hasWriteFailure }
   })
 
-  ipcMain.handle(
-    'pty:spawn',
-    (_event, cardId: string, cwd: string, command: string, cols: number, rows: number) => {
-      try {
-        ptyManager.spawn(cardId, cwd, command, cols, rows)
-      } catch (err) {
-        console.error('[ipc] pty:spawn 失敗', { cardId, cwd, command, err })
-        throw err
-      }
-    },
-  )
+  ipcMain.handle('pty:spawn', (_event, cardId: string, cwd: string, cols: number, rows: number) => {
+    try {
+      ptyManager.spawn(cardId, cwd, cols, rows)
+    } catch (err) {
+      console.error('[ipc] pty:spawn 失敗', { cardId, cwd, err })
+      throw err
+    }
+  })
+  ipcMain.handle('pty:worktrees', () => scanner.knownWorktrees())
   ipcMain.on('pty:write', (_event, cardId: string, data: string) => {
     ptyManager.write(cardId, data)
   })
@@ -84,5 +84,16 @@ export function registerIpc(
   store.onWriteError((message) => {
     const win = getWindow()
     if (win && !win.isDestroyed()) win.webContents.send('board:write-error', message)
+  })
+
+  // session 掃描結果：偵測到 worktree（或它被移除，帶 null）推給 renderer 記到卡片上；
+  // Claude 回合結束（busy → 其他任何狀態，含 idle / waiting / shell）時用系統提示音通知，
+  // 不論卡片是否在前景
+  scanner.onWorktree((cardId, worktree) => {
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('pty:worktree', cardId, worktree)
+  })
+  scanner.onClaudeIdle(() => {
+    shell.beep()
   })
 }

@@ -1,4 +1,5 @@
 import type { IPty } from 'node-pty'
+import type { PtyEntry } from './session-scan'
 
 export interface SpawnOptions {
   file: string
@@ -12,10 +13,18 @@ export interface SpawnOptions {
 export type PtySpawner = (opts: SpawnOptions) => IPty
 
 const KILL_TIMEOUT_MS = 500
+/** 每張卡片開 shell 後自動執行的指令——這個工具就是為 Claude Code 做的，不開放自訂 */
+const CLAUDE_COMMAND = 'claude'
+
+/** 一張卡片的 pty 與開它時的工作目錄；cwd 給 session 掃描判斷 worktree 是否在卡片目錄底下 */
+interface PtyRecord {
+  pty: IPty
+  cwd: string
+}
 
 /** 所有 pty 的唯一擁有者。spawner 由外部注入，測試才能替換成 fake。 */
 export class PtyManager {
-  private readonly ptys = new Map<string, IPty>()
+  private readonly ptys = new Map<string, PtyRecord>()
   /** kill 失敗、已從 ptys 移除但可能仍存活的 pty，killAll 時要再試一次 */
   private readonly orphans = new Set<IPty>()
   /**
@@ -29,11 +38,11 @@ export class PtyManager {
   constructor(private readonly spawner: PtySpawner) {}
 
   /**
-   * 開一個 login shell 並把卡片的 command 寫進去。
-   * 不直接 spawn command 的原因：login shell 才有完整 PATH，
+   * 開一個 login shell 並把 claude 指令寫進去。
+   * 不直接 spawn claude 的原因：login shell 才有完整 PATH，
    * 且 Claude 結束後會回到 shell prompt，pty 不會跟著消失。
    */
-  spawn(cardId: string, cwd: string, command: string, cols: number, rows: number): void {
+  spawn(cardId: string, cwd: string, cols: number, rows: number): void {
     if (this.ptys.has(cardId)) {
       console.warn('[pty-manager] cardId 已有 pty，先關閉舊的再重建', { cardId })
       this.kill(cardId)
@@ -57,44 +66,50 @@ export class PtyManager {
       this.exited.add(pty)
       // 舊 pty 被重啟取代後才回報 exit 時，Map 裡已經是新的 pty。
       // 只有仍是持有者的 pty 才能清除紀錄與對外廣播，否則會誤刪新 pty 並誤報已結束。
-      if (this.ptys.get(cardId) !== pty) return
+      if (this.ptys.get(cardId)?.pty !== pty) return
       this.ptys.delete(cardId)
       this.exitCb?.(cardId, exitCode)
     })
 
-    this.ptys.set(cardId, pty)
+    this.ptys.set(cardId, { pty, cwd })
 
-    const trimmed = command.trim()
-    if (trimmed) {
-      try {
-        pty.write(`${trimmed}\n`)
-      } catch (err) {
-        console.warn('[pty-manager] 寫入初始 command 失敗', { cardId, err })
-      }
+    try {
+      pty.write(`${CLAUDE_COMMAND}\n`)
+    } catch (err) {
+      console.warn('[pty-manager] 寫入 claude 指令失敗', { cardId, err })
     }
   }
 
+  /** 列出存活中的 pty：shell pid 與卡片 cwd，供 session 掃描找子孫程序 */
+  entries(): PtyEntry[] {
+    return [...this.ptys].map(([cardId, record]) => ({
+      cardId,
+      pid: record.pty.pid,
+      cwd: record.cwd,
+    }))
+  }
+
   write(cardId: string, data: string): void {
-    const pty = this.ptys.get(cardId)
-    if (!pty) {
+    const record = this.ptys.get(cardId)
+    if (!record) {
       console.warn('[pty-manager] write 找不到對應的 pty，忽略此次輸入', { cardId })
       return
     }
     try {
-      pty.write(data)
+      record.pty.write(data)
     } catch (err) {
       console.warn('[pty-manager] write 失敗', { cardId, err })
     }
   }
 
   resize(cardId: string, cols: number, rows: number): void {
-    const pty = this.ptys.get(cardId)
-    if (!pty) {
+    const record = this.ptys.get(cardId)
+    if (!record) {
       console.warn('[pty-manager] resize 找不到對應的 pty，忽略此次調整', { cardId })
       return
     }
     try {
-      pty.resize(cols, rows)
+      record.pty.resize(cols, rows)
     } catch (err) {
       console.warn('[pty-manager] resize 失敗', { cardId, cols, rows, err })
     }
@@ -111,11 +126,12 @@ export class PtyManager {
    * 因此 500ms 寬限期足夠。
    */
   kill(cardId: string): void {
-    const pty = this.ptys.get(cardId)
-    if (!pty) {
+    const record = this.ptys.get(cardId)
+    if (!record) {
       console.warn('[pty-manager] kill 找不到對應的 pty，可能已結束或 cardId 有誤', { cardId })
       return
     }
+    const { pty } = record
     // 不在這裡從 Map 移除：移除與 exit 廣播統一由 onExit handler 處理，
     // 否則身分比對會因為 Map 已無此 cardId 而失敗，導致主動 kill 永遠不廣播 exit
     try {
@@ -148,7 +164,7 @@ export class PtyManager {
     if (ids.length > 0) {
       for (const id of ids) {
         try {
-          this.ptys.get(id)?.kill('SIGHUP')
+          this.ptys.get(id)?.pty.kill('SIGHUP')
         } catch (err) {
           console.warn('[pty-manager] 送出 SIGHUP 失敗', { cardId: id, err })
         }
@@ -157,16 +173,16 @@ export class PtyManager {
       await new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
 
       for (const id of ids) {
-        const pty = this.ptys.get(id)
-        if (!pty) continue
+        const record = this.ptys.get(id)
+        if (!record) continue
         // 不在這裡 delete：移除與 exit 廣播統一由 onExit handler 處理，
         // 與 kill() 保持同一個契約——否則 onExit 的身分比對會因為 Map 已無此
         // cardId 而失敗，導致 exitCb 永遠不會廣播，卡片會一直停在執行中
         try {
-          pty.kill('SIGKILL')
+          record.pty.kill('SIGKILL')
         } catch (err) {
           console.warn('[pty-manager] 送出 SIGKILL 失敗', { cardId: id, err })
-          this.orphans.add(pty)
+          this.orphans.add(record.pty)
         }
       }
     }

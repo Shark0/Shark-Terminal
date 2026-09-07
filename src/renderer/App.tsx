@@ -15,6 +15,19 @@ export default function App(): JSX.Element {
   const loadBoard = useAppStore((s) => s.loadBoard)
   const setPtyStatus = useAppStore((s) => s.setPtyStatus)
   const setWriteFailedNotice = useAppStore((s) => s.setWriteFailedNotice)
+  const updateCard = useAppStore((s) => s.updateCard)
+  /** 偵測到的 worktree 記到卡片上並存檔，app 重啟後停掉的卡片仍看得出它屬於哪個 worktree */
+  const applyWorktree = useCallback(
+    (cardId: string, worktree: string | null) => {
+      const card = useAppStore.getState().board.cards[cardId]
+      if (!card) {
+        console.warn('[App] 收到 worktree 推播但卡片已不存在', { cardId, worktree })
+        return
+      }
+      if ((card.worktree ?? null) !== worktree) updateCard(cardId, { worktree })
+    },
+    [updateCard],
+  )
   const [home, setHome] = useState('')
   const [ratio, setRatio] = useState(loadSplitRatio)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -23,9 +36,18 @@ export default function App(): JSX.Element {
   const splitContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    void loadBoard()
+    void loadBoard().then(async () => {
+      // 看板載入前 main 端可能已經推播過 worktree（renderer ⌘R 重載時），補回來
+      try {
+        for (const { cardId, worktree } of await window.gc.pty.knownWorktrees()) {
+          applyWorktree(cardId, worktree)
+        }
+      } catch (err) {
+        console.warn('[App] 補回 main 端記得的 worktree 失敗', { err })
+      }
+    })
     setHome(window.gc.homeDir())
-  }, [loadBoard])
+  }, [loadBoard, applyWorktree])
 
   // pty 的輸出直接寫進對應的 xterm；結束時把卡片轉為 stopped；
   // 看板寫入失敗即時顯示警告，不必等下一次編輯觸發的 IPC 回應才知道
@@ -37,6 +59,7 @@ export default function App(): JSX.Element {
     const offExit = window.gc.onPtyExit((cardId) => {
       setPtyStatus(cardId, 'stopped')
     })
+    const offWorktree = window.gc.onPtyWorktree(applyWorktree)
     const offWriteError = window.gc.onBoardWriteError((message) => {
       console.error('[App] 看板寫入失敗', { message })
       setWriteFailedNotice()
@@ -44,9 +67,10 @@ export default function App(): JSX.Element {
     return () => {
       offData()
       offExit()
+      offWorktree()
       offWriteError()
     }
-  }, [setPtyStatus, setWriteFailedNotice])
+  }, [setPtyStatus, setWriteFailedNotice, applyWorktree])
 
   // 狀態燈：500ms 輪詢一次，store 只在狀態真的變化時才更新
   useEffect(() => {

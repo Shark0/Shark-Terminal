@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SpawnOptions } from '../../src/main/pty-manager'
 import { PtyManager } from '../../src/main/pty-manager'
 
+let nextPid = 1000
+
 class FakePty {
+  readonly pid = nextPid++
   written: string[] = []
   killed: string[] = []
   cols = 0
@@ -78,7 +81,7 @@ describe('spawn', () => {
     process.env.SHELL = ''
     try {
       const { created, manager } = setup()
-      manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+      manager.spawn('card_a', '/tmp', 80, 24)
       expect(created[0].opts.file).toBe('/bin/zsh')
     } finally {
       if (original === undefined) delete process.env.SHELL
@@ -86,9 +89,9 @@ describe('spawn', () => {
     }
   })
 
-  it('以卡片的 cwd 開 login shell，並把 command 寫進去', () => {
+  it('以卡片的 cwd 開 login shell，並自動執行 claude', () => {
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp/project-a', 'claude', 120, 40)
+    manager.spawn('card_a', '/tmp/project-a', 120, 40)
 
     expect(created).toHaveLength(1)
     expect(created[0].opts.cwd).toBe('/tmp/project-a')
@@ -100,21 +103,15 @@ describe('spawn', () => {
 
   it('設定 TERM 為 xterm-256color', () => {
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
     expect(created[0].opts.env.TERM).toBe('xterm-256color')
-  })
-
-  it('command 為空字串時不寫入任何東西，只留一個乾淨的 shell', () => {
-    const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', '   ', 80, 24)
-    expect(created[0].written).toEqual([])
   })
 
   it('對已存在的 cardId 再次 spawn 會先殺掉舊的（重啟語意）', () => {
     vi.useFakeTimers()
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
 
     expect(created).toHaveLength(2)
     // 重啟也走 SIGHUP，舊 session 的歷史才會寫回檔案
@@ -125,8 +122,8 @@ describe('spawn', () => {
   it('重啟時舊 pty 沒被 SIGHUP 帶走，逾時仍會強制終止，不留孤兒', () => {
     vi.useFakeTimers()
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
 
     // 逾時判斷必須看舊 pty 自己有沒有結束，不能看 Map——Map 早已被新 pty 佔據
     vi.advanceTimersByTime(500)
@@ -138,8 +135,8 @@ describe('spawn', () => {
     const { created, manager } = setup()
     const onExit = vi.fn()
     manager.onExit(onExit)
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
 
     // 舊 pty（created[0]）延遲觸發 exit 時，Map 裡已經是新 pty（created[1]），
     // 不該被誤刪、也不該對外廣播一個假的 exit
@@ -153,7 +150,7 @@ describe('spawn', () => {
     expect(onExit).toHaveBeenCalledWith('card_a', 0)
   })
 
-  it('spawn 寫入 command 失敗時不會 propagate', () => {
+  it('spawn 寫入 claude 指令失敗時不會 propagate', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { created, manager, spawner } = setup()
     spawner.mockImplementationOnce((opts: SpawnOptions) => {
@@ -163,7 +160,7 @@ describe('spawn', () => {
       return pty as never
     })
 
-    expect(() => manager.spawn('card_a', '/tmp', 'claude', 80, 24)).not.toThrow()
+    expect(() => manager.spawn('card_a', '/tmp', 80, 24)).not.toThrow()
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
@@ -172,14 +169,14 @@ describe('spawn', () => {
 describe('write / resize', () => {
   it('write 轉發到對應的 pty', () => {
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
     manager.write('card_a', 'ls\n')
     expect(created[0].written).toEqual(['claude\n', 'ls\n'])
   })
 
   it('resize 轉發到對應的 pty', () => {
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
     manager.resize('card_a', 200, 50)
     expect(created[0].cols).toBe(200)
     expect(created[0].rows).toBe(50)
@@ -197,7 +194,7 @@ describe('write / resize', () => {
   it('write 底層拋出時不會 propagate', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
     created[0].failWrite = true
 
     expect(() => manager.write('card_a', 'ls\n')).not.toThrow()
@@ -206,12 +203,40 @@ describe('write / resize', () => {
   })
 })
 
+describe('entries', () => {
+  it('列出每張卡片的 shell pid 與 cwd，供 session 掃描找子孫程序', () => {
+    const { created, manager } = setup()
+    manager.spawn('card_a', '/tmp/a', 80, 24)
+    manager.spawn('card_b', '/tmp/b', 80, 24)
+
+    expect(manager.entries()).toEqual([
+      { cardId: 'card_a', pid: created[0].pid, cwd: '/tmp/a' },
+      { cardId: 'card_b', pid: created[1].pid, cwd: '/tmp/b' },
+    ])
+  })
+
+  it('pty 結束後不再列出', () => {
+    const { created, manager } = setup()
+    manager.spawn('card_a', '/tmp/a', 80, 24)
+    created[0].emitExit(0)
+    expect(manager.entries()).toEqual([])
+  })
+
+  it('重啟後列出的是新 pty 的 pid', () => {
+    vi.useFakeTimers()
+    const { created, manager } = setup()
+    manager.spawn('card_a', '/tmp/a', 80, 24)
+    manager.spawn('card_a', '/tmp/a', 80, 24)
+    expect(manager.entries()).toEqual([{ cardId: 'card_a', pid: created[1].pid, cwd: '/tmp/a' }])
+  })
+})
+
 describe('事件廣播', () => {
   it('output 帶著 cardId 發出', () => {
     const { created, manager } = setup()
     const onData = vi.fn()
     manager.onData(onData)
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
 
     created[0].emitData('hello')
     expect(onData).toHaveBeenCalledWith('card_a', 'hello')
@@ -221,7 +246,7 @@ describe('事件廣播', () => {
     const { created, manager } = setup()
     const onExit = vi.fn()
     manager.onExit(onExit)
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
 
     created[0].emitExit(0)
     expect(onExit).toHaveBeenCalledWith('card_a', 0)
@@ -233,7 +258,7 @@ describe('kill', () => {
   it('kill 先送 SIGHUP——SIGKILL/SIGTERM 都不會讓 shell 寫回歷史，使用者打過的指令會全部消失', () => {
     vi.useFakeTimers()
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
     manager.kill('card_a')
 
     expect(created[0].killed).toEqual(['SIGHUP'])
@@ -244,7 +269,7 @@ describe('kill', () => {
   it('SIGHUP 後逾時仍存活，升級為 SIGKILL', () => {
     vi.useFakeTimers()
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
     manager.kill('card_a')
 
     vi.advanceTimersByTime(499)
@@ -257,7 +282,7 @@ describe('kill', () => {
   it('SIGHUP 後已自行結束的 pty 不會再被 SIGKILL', () => {
     vi.useFakeTimers()
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
     manager.kill('card_a')
     created[0].emitExit(0)
 
@@ -269,7 +294,7 @@ describe('kill', () => {
     const { created, manager } = setup()
     const onExit = vi.fn()
     manager.onExit(onExit)
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
 
     vi.useFakeTimers()
     manager.kill('card_a')
@@ -293,8 +318,8 @@ describe('killAll', () => {
   it('先全部送 SIGHUP 讓 shell 收攤，逾時後對仍存活者送 SIGKILL', async () => {
     vi.useFakeTimers()
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
-    manager.spawn('card_b', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
+    manager.spawn('card_b', '/tmp', 80, 24)
 
     const done = manager.killAll(500)
 
@@ -320,7 +345,7 @@ describe('killAll', () => {
   it('已自行結束的 pty 不會再被 SIGKILL', async () => {
     vi.useFakeTimers()
     const { created, manager } = setup()
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
 
     const done = manager.killAll(500)
     created[0].emitExit(0)
@@ -336,7 +361,7 @@ describe('killAll', () => {
     const { created, manager } = setup()
     const onExit = vi.fn()
     manager.onExit(onExit)
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
 
     const done = manager.killAll(500)
     await vi.advanceTimersByTimeAsync(500)
@@ -357,9 +382,9 @@ describe('killAll', () => {
     const { created, manager } = setup()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24)
+    manager.spawn('card_a', '/tmp', 80, 24)
     created[0].failNextKill = true
-    manager.spawn('card_a', '/tmp', 'claude', 80, 24) // 觸發覆蓋前的 kill，這次會拋錯
+    manager.spawn('card_a', '/tmp', 80, 24) // 觸發覆蓋前的 kill，這次會拋錯
 
     expect(created).toHaveLength(2)
     // 第一次 kill 因為 failNextKill 而拋錯，沒有真的送出信號

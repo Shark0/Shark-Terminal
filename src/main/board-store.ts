@@ -24,8 +24,9 @@ function isCard(value: unknown): value is Card {
     typeof c.id === 'string' &&
     typeof c.title === 'string' &&
     typeof c.cwd === 'string' &&
-    typeof c.command === 'string' &&
     typeof c.note === 'string' &&
+    // null 也接受：README 邀請使用者手改 board.json，清空欄位最自然的寫法就是 null
+    (c.worktree == null || typeof c.worktree === 'string') &&
     typeof c.createdAt === 'string' &&
     typeof c.updatedAt === 'string'
   )

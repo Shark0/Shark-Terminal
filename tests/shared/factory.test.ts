@@ -23,7 +23,7 @@ describe('pickColumnColor', () => {
 describe('newCard', () => {
   it('note 未提供時為空字串，兩個時間戳相同', () => {
     const card = newCard(
-      { title: '訂單結帳重構', cwd: '/tmp/project-a', command: 'claude' },
+      { title: '訂單結帳重構', cwd: '/tmp/project-a' },
       'card_1',
       '2026-08-27T00:00:00.000Z',
     )
@@ -31,7 +31,6 @@ describe('newCard', () => {
       id: 'card_1',
       title: '訂單結帳重構',
       cwd: '/tmp/project-a',
-      command: 'claude',
       note: '',
       createdAt: '2026-08-27T00:00:00.000Z',
       updatedAt: '2026-08-27T00:00:00.000Z',
@@ -40,7 +39,7 @@ describe('newCard', () => {
 
   it('note 有提供時保留', () => {
     const card = newCard(
-      { title: 'T', cwd: '/tmp', command: 'claude', note: '記得跑 migration' },
+      { title: 'T', cwd: '/tmp', note: '記得跑 migration' },
       'card_2',
       '2026-08-27T00:00:00.000Z',
     )

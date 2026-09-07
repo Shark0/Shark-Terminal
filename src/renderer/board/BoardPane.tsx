@@ -128,11 +128,15 @@ export default function BoardPane({ home }: Props): JSX.Element {
     const payload = {
       title: draft.title.trim(),
       cwd: draft.cwd.trim(),
-      command: draft.command.trim(),
       note: draft.note,
     }
-    if (dialog.mode === 'create') addCard(dialog.columnId, payload)
-    else updateCard(dialog.cardId, payload)
+    if (dialog.mode === 'create') {
+      addCard(dialog.columnId, payload)
+    } else {
+      // worktree 是相對於舊 cwd 偵測到的，cwd 換了它就沒意義；不清會永遠蓋住新目錄的 branch
+      const cwdChanged = board.cards[dialog.cardId]?.cwd !== payload.cwd
+      updateCard(dialog.cardId, cwdChanged ? { ...payload, worktree: null } : payload)
+    }
     setDialog(null)
   }
 

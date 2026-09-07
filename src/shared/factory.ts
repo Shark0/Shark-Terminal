@@ -1,7 +1,7 @@
 import { COLUMN_COLORS, type Board, type Card, type Column } from './types'
 
 export function newCard(
-  input: { title: string; cwd: string; command: string; note?: string },
+  input: { title: string; cwd: string; note?: string },
   id: string,
   now: string,
 ): Card {
@@ -9,7 +9,6 @@ export function newCard(
     id,
     title: input.title,
     cwd: input.cwd,
-    command: input.command,
     note: input.note ?? '',
     createdAt: now,
     updatedAt: now,
