@@ -1,12 +1,13 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  type CollisionDetection,
   DndContext,
   type DragEndEvent,
   type DragOverEvent,
   DragOverlay,
   type DragStartEvent,
   PointerSensor,
-  closestCorners,
+  closestCenter,
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
@@ -17,17 +18,18 @@ import { useAppStore } from '../store/app-store'
 import CardDialog, { type CardDraft } from './CardDialog'
 import Column from './Column'
 import DragCardPreview from './DragCardPreview'
+import {
+  chooseCardDropTarget,
+  columnIdOfCard,
+  crossColumnInsertIndex,
+  resolveTargetColumnId,
+} from './drag-utils'
 
 /** null 代表對話框關閉；有值時 columnId 為新增目標、cardId 為編輯目標 */
 type DialogState = { mode: 'create'; columnId: string } | { mode: 'edit'; cardId: string } | null
 
 interface Props {
   home: string
-}
-
-/** 找出卡片目前所在的欄位 id */
-function columnIdOfCard(board: Board, cardId: string): string | null {
-  return board.columns.find((c) => c.cardIds.includes(cardId))?.id ?? null
 }
 
 export default function BoardPane({ home }: Props): JSX.Element {
@@ -45,9 +47,53 @@ export default function BoardPane({ home }: Props): JSX.Element {
   const [addingColumn, setAddingColumn] = useState(false)
   const [newColumnTitle, setNewColumnTitle] = useState('')
   const snapshot = useRef<Board | null>(null)
+  /** 看板捲動容器；指標離開它就視為沒有放置目標（放開＝取消） */
+  const boardRef = useRef<HTMLDivElement>(null)
+  /**
+   * 卡片剛跨欄移動的那一幀，版面還沒重新量測，任何依 rect 的判斷都會算錯；
+   * 這段期間一律回報「卡片自己」讓它穩定下來，下一幀（board 更新後的 rAF）再解除
+   */
+  const recentlyMovedToNewColumn = useRef(false)
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      recentlyMovedToNewColumn.current = false
+    })
+  }, [board])
 
   // 需要一點位移才觸發拖拉，否則單擊卡片會被誤判成拖曳
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+
+  /**
+   * 碰撞偵測不用預設的 closestCorners：它拿拖曳中的矩形與各目標比距離，
+   * 欄位（大矩形）與欄內卡片（小矩形）互相競爭，卡片一搬進新欄版面就變，
+   * over 在「欄位本身 → 移到末端」與「欄內卡片 → 插到它前面」之間來回翻轉，
+   * 同一個 commit 內無限循環，React 達到巢狀更新上限後整棵樹卸載，視窗只剩黑底。
+   * 卡片改用純指標位置決定目標（見 chooseCardDropTarget），欄位拖曳則只跟其他欄位比。
+   */
+  const collisionDetection: CollisionDetection = useCallback(
+    (args) => {
+      if (args.active.data.current?.type === 'column') {
+        // 只跟欄位比，卡片不參與，onDragEnd 就不必再把卡片換算回欄位
+        return closestCenter({
+          ...args,
+          droppableContainers: args.droppableContainers.filter(
+            (c) => c.data.current?.type === 'column',
+          ),
+        })
+      }
+      const target = chooseCardDropTarget({
+        board,
+        rects: args.droppableRects,
+        boardRect: boardRef.current?.getBoundingClientRect() ?? null,
+        pointer: args.pointerCoordinates,
+        activeId: String(args.active.id),
+        recentlyMoved: recentlyMovedToNewColumn.current,
+      })
+      return target !== null ? [{ id: target }] : []
+    },
+    [board],
+  )
 
   const onDragStart = (event: DragStartEvent): void => {
     snapshot.current = useAppStore.getState().board
@@ -56,7 +102,11 @@ export default function BoardPane({ home }: Props): JSX.Element {
     }
   }
 
-  /** 拖拉過程即時預覽（不存檔），讓目標欄的卡片會讓位 */
+  /**
+   * 拖拉過程只處理「跨欄」：把卡片搬進目標欄（不存檔），讓目標欄的卡片讓位。
+   * 同欄重排交給 SortableContext 的讓位動畫與 onDragEnd，拖曳中不改順序——
+   * 若在這裡也改順序，卡片高度不一時同樣會與碰撞偵測互相追逐
+   */
   const onDragOver = (event: DragOverEvent): void => {
     const { active, over } = event
     if (!over || active.data.current?.type !== 'card') return
@@ -66,25 +116,20 @@ export default function BoardPane({ home }: Props): JSX.Element {
     if (cardId === overId) return
 
     const current = useAppStore.getState().board
-    const overColumn = current.columns.find((c) => c.id === overId)
+    const fromColumnId = columnIdOfCard(current, cardId)
+    const toColumnId = resolveTargetColumnId(current, overId)
+    if (!fromColumnId || !toColumnId || fromColumnId === toColumnId) return
 
-    if (overColumn) {
-      // 拖到欄位本身（空欄或欄位空白處）→ 插到末端。
-      // 同欄且已在末端才是真的 no-op；否則要允許拖到自己欄位的空白處移到末端
-      // （moveCardIn 內部會先把卡片從原位置移除再 clamp 插入索引，同欄移動也是正確的）
-      const currentColumnId = columnIdOfCard(current, cardId)
-      const lastId = overColumn.cardIds[overColumn.cardIds.length - 1]
-      if (currentColumnId === overColumn.id && lastId === cardId) return
-      previewBoard(moveCardIn(current, cardId, overColumn.id, overColumn.cardIds.length))
+    const toColumn = current.columns.find((c) => c.id === toColumnId)
+    if (!toColumn) {
+      console.warn('[BoardPane] onDragOver 找不到目標欄位，忽略這次移動', { cardId, overId, toColumnId })
       return
     }
-
-    const toColumnId = columnIdOfCard(current, overId)
-    if (!toColumnId) return
-    const toIndex = current.columns
-      .find((c) => c.id === toColumnId)!
-      .cardIds.indexOf(overId)
-    previewBoard(moveCardIn(current, cardId, toColumnId, toIndex))
+    // 拖曳中的卡片（位移後的矩形）已越過 over 卡片下緣 → 放它後面，否則放前面
+    const translated = active.rect.current.translated
+    const isBelowOver = translated !== null && translated.top > over.rect.top + over.rect.height
+    recentlyMovedToNewColumn.current = true
+    previewBoard(moveCardIn(current, cardId, toColumnId, crossColumnInsertIndex(toColumn, overId, isBelowOver)))
   }
 
   const onDragEnd = (event: DragEndEvent): void => {
@@ -99,21 +144,22 @@ export default function BoardPane({ home }: Props): JSX.Element {
     }
     snapshot.current = null
 
+    const current = useAppStore.getState().board
+    const activeId = String(active.id)
+    const overId = String(over.id)
+
     if (active.data.current?.type === 'column') {
-      const current = useAppStore.getState().board
-      const overId = String(over.id)
-      // over 可能是欄位本身，也可能是該欄位內的某張卡片——
-      // 拖曳欄位經過另一欄時，指標常會落在對方的卡片上
-      const targetColumnId = current.columns.some((c) => c.id === overId)
-        ? overId
-        : columnIdOfCard(current, overId)
-      if (targetColumnId) {
-        const toIndex = current.columns.findIndex((c) => c.id === targetColumnId)
-        if (toIndex !== -1) previewBoard(moveColumnIn(current, String(active.id), toIndex))
-      }
+      // 碰撞偵測只回報欄位，over 一定是欄位本身
+      const toIndex = current.columns.findIndex((c) => c.id === overId)
+      if (toIndex !== -1) previewBoard(moveColumnIn(current, activeId, toIndex))
+    } else if (activeId !== overId) {
+      // 跨欄已在 onDragOver 搬到目標欄；這裡處理同欄內的最終順序（索引語意同 arrayMove）
+      const columnId = columnIdOfCard(current, activeId)
+      const column = current.columns.find((c) => c.id === columnId)
+      const overIndex = column?.cardIds.indexOf(overId) ?? -1
+      if (column && overIndex !== -1) previewBoard(moveCardIn(current, activeId, column.id, overIndex))
     }
 
-    // 卡片位置在 onDragOver 已經預覽到位，這裡只負責落檔
     commitBoard()
   }
 
@@ -143,7 +189,7 @@ export default function BoardPane({ home }: Props): JSX.Element {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetection}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
@@ -151,7 +197,7 @@ export default function BoardPane({ home }: Props): JSX.Element {
     >
       {/* items-start：欄位依內容決定高度，不被 stretch 拉滿；
           overflow-auto：欄位變高超出可視範圍時能垂直捲動 */}
-      <div className="flex h-full items-start gap-3 overflow-auto p-3">
+      <div ref={boardRef} className="flex h-full items-start gap-3 overflow-auto p-3">
         <SortableContext
           items={board.columns.map((c) => c.id)}
           strategy={horizontalListSortingStrategy}

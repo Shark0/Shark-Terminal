@@ -58,6 +58,14 @@ npm run build:mac # 打包成 .dmg（arm64 與 x64 各一包）
 （打包會為 arm64 與 x64 分別重建 node-pty，結束後會自動還原成本機架構；
 若中途中斷，手動跑 `npx electron-builder install-app-deps` 即可修復）
 
+拖曳卡片的行為牽涉 dnd-kit 的碰撞偵測與真實版面，jsdom 測不到，另有一支在真的 Electron 裡跑的煙霧測試：
+
+```bash
+npm run dev:debug   # 終端機 A：dev 模式並開啟 remote debugging port 9333，使用 ~/.sharkterminal/board.dev.json
+npm run smoke:drag  # 終端機 B：自動拖曳六種情境（同欄重排、跨欄、縫隙來回、視窗邊緣…），監聽 renderer 錯誤
+```
+
+看板需要至少一欄有兩張以上卡片、一個空欄、另一欄有卡片，且都在視窗可見範圍內；Node 20 需要 `--experimental-websocket`（script 已帶）。
 
 ## 資料存放
 

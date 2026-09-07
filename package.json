@@ -6,10 +6,12 @@
   "author": "shark",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:debug": "electron-vite dev --remoteDebuggingPort 9333",
     "build": "electron-vite build",
     "build:mac": "npm run build && electron-builder --mac && electron-builder install-app-deps",
     "test": "vitest run",
     "test:watch": "vitest",
+    "smoke:drag": "node --experimental-websocket scripts/drag-smoke.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "postinstall": "electron-builder install-app-deps"
   },
