@@ -3,10 +3,14 @@ import { join } from 'node:path'
 import { BrowserWindow, app } from 'electron'
 import * as nodePty from 'node-pty'
 import { BoardStore } from './board-store'
+import { stripInheritedEnv } from './inherited-env'
 import { PtyManager } from './pty-manager'
 import { createNodeScanDeps, probeClaudeConfigDir } from './scan-deps'
 import { SessionScanner } from './session-scan'
 import { registerIpc } from './ipc'
+
+// 先洗掉「這個 app 是從哪裡啟動的」，下面每一處讀 process.env 的地方才拿得到乾淨環境
+stripInheritedEnv(process.env)
 
 // dev 模式執行的是 Electron.app bundle，macOS 選單列會顯示 "Electron"。
 // 明確設定名稱讓選單列與「關於」視窗顯示正確的 app 名稱。
