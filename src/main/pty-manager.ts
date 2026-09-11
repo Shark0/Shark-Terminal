@@ -35,7 +35,11 @@ export class PtyManager {
   private dataCb: ((cardId: string, data: string) => void) | null = null
   private exitCb: ((cardId: string, exitCode: number) => void) | null = null
 
-  constructor(private readonly spawner: PtySpawner) {}
+  /** env 是卡片的基礎環境，由外部注入——來源是否乾淨（見 inherited-env）不該由這裡判斷 */
+  constructor(
+    private readonly spawner: PtySpawner,
+    private readonly env: NodeJS.ProcessEnv,
+  ) {}
 
   /**
    * 開一個 login shell 並把 claude 指令寫進去。
@@ -50,14 +54,14 @@ export class PtyManager {
 
     // 用 || 而非 ?? ——某些 launchd/CI/沙盒環境會 export 空字串的 SHELL，
     // ?? 只在 null/undefined 時才替換，空字串會原樣傳給 node-pty 導致 exec 失敗
-    const shell = process.env.SHELL || '/bin/zsh'
+    const shell = this.env.SHELL || '/bin/zsh'
     const pty = this.spawner({
       file: shell,
       args: ['-l'],
       cwd,
       cols,
       rows,
-      env: { ...process.env, TERM: 'xterm-256color' },
+      env: { ...this.env, TERM: 'xterm-256color' },
     })
 
     pty.onData((data) => this.dataCb?.(cardId, data))

@@ -3,14 +3,14 @@ import { join } from 'node:path'
 import { BrowserWindow, app } from 'electron'
 import * as nodePty from 'node-pty'
 import { BoardStore } from './board-store'
-import { stripInheritedEnv } from './inherited-env'
+import { withoutInheritedIdentity } from './inherited-env'
 import { PtyManager } from './pty-manager'
 import { createNodeScanDeps, probeClaudeConfigDir } from './scan-deps'
 import { SessionScanner } from './session-scan'
 import { registerIpc } from './ipc'
 
-// 先洗掉「這個 app 是從哪裡啟動的」，下面每一處讀 process.env 的地方才拿得到乾淨環境
-stripInheritedEnv(process.env)
+// 卡片與探測用的 login shell 共用這一份：洗掉「這個 app 是從哪裡啟動的」身分標記
+const cleanEnv = withoutInheritedIdentity(process.env)
 
 // dev 模式執行的是 Electron.app bundle，macOS 選單列會顯示 "Electron"。
 // 明確設定名稱讓選單列與「關於」視窗顯示正確的 app 名稱。
@@ -21,14 +21,16 @@ const isDev = Boolean(process.env.ELECTRON_RENDERER_URL)
 const boardFile = join(homedir(), '.sharkterminal', isDev ? 'board.dev.json' : 'board.json')
 const store = new BoardStore(boardFile)
 
-const ptyManager = new PtyManager((opts) =>
-  nodePty.spawn(opts.file, opts.args, {
-    name: 'xterm-256color',
-    cwd: opts.cwd,
-    cols: opts.cols,
-    rows: opts.rows,
-    env: opts.env as Record<string, string>,
-  }),
+const ptyManager = new PtyManager(
+  (opts) =>
+    nodePty.spawn(opts.file, opts.args, {
+      name: 'xterm-256color',
+      cwd: opts.cwd,
+      cols: opts.cols,
+      rows: opts.rows,
+      env: opts.env as Record<string, string>,
+    }),
+  cleanEnv,
 )
 
 /** session 掃描間隔：Claude 跑指令的子程序是暫時性的，太慢會漏掉；ps + lsof 一輪約 70ms */
@@ -37,10 +39,10 @@ const SESSION_SCAN_INTERVAL_MS = 3000
 // Claude Code 的設定目錄可用 CLAUDE_CONFIG_DIR 改，session 狀態檔跟著它走。
 // 從 Finder / Dock 啟動時 process.env 沒有 rc 檔的 export，先用預設值讓掃描器能立刻開工，
 // 再用 login shell 探測一次（與卡片內 shell 讀同一套 rc）；探測結果出來前只是暫時讀不到 session 檔
-let claudeConfigDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
+let claudeConfigDir = cleanEnv.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
 const scanner = new SessionScanner(() => ptyManager.entries(), createNodeScanDeps(() => claudeConfigDir))
-if (!process.env.CLAUDE_CONFIG_DIR) {
-  void probeClaudeConfigDir(process.env.SHELL || '/bin/zsh', process.env, claudeConfigDir).then((dir) => {
+if (!cleanEnv.CLAUDE_CONFIG_DIR) {
+  void probeClaudeConfigDir(cleanEnv.SHELL || '/bin/zsh', cleanEnv, claudeConfigDir).then((dir) => {
     claudeConfigDir = dir
   })
 }

@@ -1,7 +1,7 @@
 /**
  * 卡片必須是一台乾淨的終端機。這個 app 若不是從 Finder / Dock 啟動，而是從某個 Claude Code
  * session 或 Terminal.app 的 shell 裡跑起來，process.env 會帶著「啟動者是誰」的身分標記，
- * 一路傳進每一張卡片。三類都要在啟動時就洗掉：
+ * 一路傳進每一張卡片。三類都要洗掉：
  *
  * 1. CLAUDE_*：CLAUDE_CODE_CHILD_SESSION=1 會讓卡片內的 claude 自認是子 session，
  *    既不寫 prompt 歷史（按 ↑ 叫不出上一個指令），也不寫 sessions/<pid>.json
@@ -22,22 +22,26 @@
 /** 掃描器要靠它找 session 檔，是唯一該留下的 CLAUDE_* */
 const KEPT_CLAUDE_ENV = 'CLAUDE_CONFIG_DIR'
 
-const INHERITED_MARKERS = [
+const INHERITED_MARKERS = new Set([
   'TERM_PROGRAM',
   'TERM_PROGRAM_VERSION',
   'TERM_SESSION_ID',
   'GIT_EDITOR',
   'AI_AGENT',
-]
+])
 
 /**
- * 就地清掉繼承來的身分標記。
- * 在 main 啟動時對 process.env 做一次，卡片的 pty、探測用的 login shell、
- * 以及往後任何子程序就都拿到同一份乾淨環境，不必各自記得過濾。
+ * 回傳洗掉身分標記後的環境副本，不動到來源。
+ * 在 main 啟動時算一次，明確傳給卡片的 pty 與探測用的 login shell——
+ * 不就地改 process.env，是因為那樣正確性就綁在「洗的那一行要早於每一處讀取」，
+ * 而 ESM 會先跑完所有 import，哪天有模組在 top-level 讀 process.env 就靜默失效。
  */
-export function stripInheritedEnv(env: NodeJS.ProcessEnv): void {
-  for (const key of Object.keys(env)) {
-    if (key.startsWith('CLAUDE') && key !== KEPT_CLAUDE_ENV) delete env[key]
+export function withoutInheritedIdentity(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (key.startsWith('CLAUDE') && key !== KEPT_CLAUDE_ENV) continue
+    if (INHERITED_MARKERS.has(key)) continue
+    env[key] = value
   }
-  for (const key of INHERITED_MARKERS) delete env[key]
+  return env
 }

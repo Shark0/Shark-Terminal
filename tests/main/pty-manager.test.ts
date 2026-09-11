@@ -61,14 +61,15 @@ class FakePty {
   }
 }
 
-function setup() {
+/** env 預設給最小可用值；要驗環境相關行為的測試自己傳 */
+function setup(env: NodeJS.ProcessEnv = { SHELL: '/bin/zsh' }) {
   const created: FakePty[] = []
   const spawner = vi.fn((opts: SpawnOptions) => {
     const pty = new FakePty(opts)
     created.push(pty)
     return pty as never
   })
-  return { created, manager: new PtyManager(spawner), spawner }
+  return { created, manager: new PtyManager(spawner, env), spawner }
 }
 
 afterEach(() => {
@@ -76,17 +77,21 @@ afterEach(() => {
 })
 
 describe('spawn', () => {
-  it('SHELL 環境變數為空字串時 fallback 到 /bin/zsh（?? 對空字串沒有替換效果，須用 ||）', () => {
-    const original = process.env.SHELL
-    process.env.SHELL = ''
-    try {
-      const { created, manager } = setup()
-      manager.spawn('card_a', '/tmp', 80, 24)
-      expect(created[0].opts.file).toBe('/bin/zsh')
-    } finally {
-      if (original === undefined) delete process.env.SHELL
-      else process.env.SHELL = original
-    }
+  it('SHELL 為空字串時 fallback 到 /bin/zsh（?? 對空字串沒有替換效果，須用 ||）', () => {
+    const { created, manager } = setup({ SHELL: '' })
+    manager.spawn('card_a', '/tmp', 80, 24)
+    expect(created[0].opts.file).toBe('/bin/zsh')
+  })
+
+  it('卡片的環境完全來自注入值，不摻 process.env——身分標記在 main 啟動時就洗掉了', () => {
+    const { created, manager } = setup({ SHELL: '/bin/zsh', PATH: '/usr/bin', LANG: 'zh_TW.UTF-8' })
+    manager.spawn('card_a', '/tmp', 80, 24)
+    expect(created[0].opts.env).toEqual({
+      SHELL: '/bin/zsh',
+      PATH: '/usr/bin',
+      LANG: 'zh_TW.UTF-8',
+      TERM: 'xterm-256color',
+    })
   })
 
   it('以卡片的 cwd 開 login shell，並自動執行 claude', () => {
