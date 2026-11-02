@@ -1,13 +1,17 @@
+import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { BrowserWindow, app } from 'electron'
 import * as nodePty from 'node-pty'
 import { BoardStore } from './board-store'
+import { runWithDeadline } from './deadline'
+import { installFileLog } from './file-log'
 import { withoutInheritedIdentity } from './inherited-env'
 import { PtyManager } from './pty-manager'
 import { createNodeScanDeps, probeClaudeConfigDir } from './scan-deps'
 import { SessionScanner } from './session-scan'
 import { registerIpc } from './ipc'
+import { ThreadpoolWatchdog } from './threadpool-watchdog'
 
 // 卡片與探測用的 login shell 共用這一份：洗掉「這個 app 是從哪裡啟動的」身分標記
 const cleanEnv = withoutInheritedIdentity(process.env)
@@ -20,6 +24,23 @@ const isDev = Boolean(process.env.ELECTRON_RENDERER_URL)
 // dev 用獨立看板檔，避免與正在使用中的正式版互相覆寫
 const boardFile = join(homedir(), '.sharkterminal', isDev ? 'board.dev.json' : 'board.json')
 const store = new BoardStore(boardFile)
+
+// main 的 console 同時寫檔：從 Finder / Dock 啟動時沒有 stdout，app 卡住後才有東西可查
+const LOG_MAX_BYTES = 5 * 1024 * 1024
+installFileLog(join(homedir(), '.sharkterminal', isDev ? 'main.dev.log' : 'main.log'), LOG_MAX_BYTES)
+console.log('[main] 啟動', { version: app.getVersion(), pid: process.pid })
+
+/**
+ * threadpool 看門狗：探測走 fs.stat（與 pty 輸入、讀寫看板共用 libuv threadpool），
+ * 30 秒一輪、超過 5 秒算異常。曾發生 app 無法輸入、重開視窗卡在載入中、⌘Q 關不掉，
+ * 三者都指向 threadpool 被佔滿，靠它在 log 留下發生時間
+ */
+const WATCHDOG_INTERVAL_MS = 30_000
+const WATCHDOG_THRESHOLD_MS = 5_000
+const watchdog = new ThreadpoolWatchdog(() => fs.stat(homedir()), WATCHDOG_INTERVAL_MS, WATCHDOG_THRESHOLD_MS)
+
+/** 結束前清理的上限：flush 與 killAll 走 fs / 信號，卡住時不能讓 app 永遠關不掉 */
+const QUIT_CLEANUP_TIMEOUT_MS = 3000
 
 const ptyManager = new PtyManager(
   (opts) =>
@@ -100,6 +121,7 @@ if (!isDev && !app.requestSingleInstanceLock()) {
 void app.whenReady().then(() => {
   registerIpc(store, ptyManager, scanner, () => mainWindow)
   scanner.start(SESSION_SCAN_INTERVAL_MS)
+  watchdog.start()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -123,10 +145,20 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   cleaningUp = true
   scanner.stop()
+  watchdog.stop()
   void (async () => {
     try {
-      await store.flush()
-      await ptyManager.killAll()
+      const cleanup = (async () => {
+        await store.flush()
+        await ptyManager.killAll()
+      })()
+      // 期限用 setTimeout 計時、不經過 threadpool：threadpool 卡死時 flush 永遠不會回來，
+      // 沒有上限的話 app 會卡在「已核准結束卻不退出」，只能重開機
+      if ((await runWithDeadline(cleanup, QUIT_CLEANUP_TIMEOUT_MS)) === 'timeout') {
+        console.error('[main] 結束前清理逾時，放棄等待直接關閉，最後一次看板變更可能沒存到', {
+          timeoutMs: QUIT_CLEANUP_TIMEOUT_MS,
+        })
+      }
     } catch (err) {
       console.error('[main] 結束前清理失敗，仍繼續關閉', { err })
     }
