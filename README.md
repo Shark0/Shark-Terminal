@@ -58,6 +58,8 @@ npm run build:mac # 打包成 .dmg（arm64 與 x64 各一包）
 （打包會為 arm64 與 x64 分別重建 node-pty，結束後會自動還原成本機架構；
 若中途中斷，手動跑 `npx electron-builder install-app-deps` 即可修復）
 
+打包完成後會刪掉 `release/mac`、`release/mac-arm64` 裡解開的 `.app`，只留 `.dmg`，避免 Spotlight／Launchpad 同時列出多個 Shark Terminal。
+
 拖曳卡片的行為牽涉 dnd-kit 的碰撞偵測與真實版面，jsdom 測不到，另有一支在真的 Electron 裡跑的煙霧測試：
 
 ```bash
