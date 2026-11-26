@@ -44,6 +44,15 @@ describe('installFileLog', () => {
     expect(readFileSync(file, 'utf8')).not.toMatch(/xxx/)
   })
 
+  it('執行中寫超過上限時也會輪替成 .1，只保留一份舊檔', () => {
+    restore = installFileLog(file, 300)
+    for (let i = 0; i < 20; i++) console.log(`第 ${i} 行`.padEnd(40, '.'))
+    expect(statSync(file).size).toBeLessThanOrEqual(300)
+    expect(statSync(`${file}.1`).size).toBeLessThanOrEqual(300 + 100)
+    expect(readFileSync(file, 'utf8')).toMatch(/第 19 行/)
+    expect(existsSync(`${file}.2`)).toBe(false)
+  })
+
   it('目錄不存在時自動建立', () => {
     const nested = path.join(root, 'a', 'b', 'main.log')
     restore = installFileLog(nested, 1024)

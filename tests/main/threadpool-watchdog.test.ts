@@ -68,4 +68,52 @@ describe('ThreadpoolWatchdog', () => {
     dog.stop()
     expect(error).toHaveBeenCalledWith(expect.stringContaining('探測失敗'), expect.objectContaining({ err: expect.any(Error) }))
   })
+
+  it('卡住超過通報門檻時呼叫 onStuck 一次，之後同一次卡住不再呼叫', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onStuck = vi.fn()
+    const dog = new ThreadpoolWatchdog(() => new Promise<void>(() => {}), 1000, 500, { alertMs: 2000, onStuck })
+    dog.start()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(onStuck).not.toHaveBeenCalled()
+    expect(dog.isStuck).toBe(true)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(onStuck).toHaveBeenCalledTimes(1)
+    expect(onStuck).toHaveBeenCalledWith(2000)
+    await vi.advanceTimersByTimeAsync(5000)
+    dog.stop()
+    expect(onStuck).toHaveBeenCalledTimes(1)
+  })
+
+  it('恢復後 isStuck 變回 false，下一次卡住會再通報', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onStuck = vi.fn()
+    let release: () => void = () => {}
+    const probe = () => new Promise<void>((resolve) => { release = resolve })
+    const dog = new ThreadpoolWatchdog(probe, 1000, 500, { alertMs: 1000, onStuck })
+    dog.start()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(onStuck).toHaveBeenCalledTimes(1)
+    release()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(dog.isStuck).toBe(false)
+    await vi.advanceTimersByTimeAsync(2000)
+    dog.stop()
+    expect(onStuck).toHaveBeenCalledTimes(2)
+  })
+
+  it('onStuck 丟例外時記 error，看門狗照常運作', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const dog = new ThreadpoolWatchdog(() => new Promise<void>(() => {}), 1000, 500, {
+      alertMs: 1000,
+      onStuck: () => {
+        throw new Error('boom')
+      },
+    })
+    dog.start()
+    await vi.advanceTimersByTimeAsync(3000)
+    dog.stop()
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('onStuck'), expect.objectContaining({ err: expect.any(Error) }))
+  })
 })

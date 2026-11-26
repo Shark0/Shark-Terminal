@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { BrowserWindow, app } from 'electron'
+import { BrowserWindow, app, dialog } from 'electron'
 import * as nodePty from 'node-pty'
 import { BoardStore } from './board-store'
 import { runWithDeadline } from './deadline'
@@ -10,6 +10,7 @@ import { withoutInheritedIdentity } from './inherited-env'
 import { PtyManager } from './pty-manager'
 import { createNodeScanDeps, probeClaudeConfigDir } from './scan-deps'
 import { SessionScanner } from './session-scan'
+import { captureStuckDiagnostics, pruneDiagnostics } from './stuck-diagnostics'
 import { registerIpc } from './ipc'
 import { ThreadpoolWatchdog } from './threadpool-watchdog'
 
@@ -30,14 +31,56 @@ const LOG_MAX_BYTES = 5 * 1024 * 1024
 installFileLog(join(homedir(), '.sharkterminal', isDev ? 'main.dev.log' : 'main.log'), LOG_MAX_BYTES)
 console.log('[main] 啟動', { version: app.getVersion(), pid: process.pid })
 
+/** threadpool 卡死時的診斷快照：只留最新 5 份、最多 30 天，一份約數 MB，不會無限長大 */
+const diagnosticsDir = join(homedir(), '.sharkterminal', isDev ? 'diagnostics.dev' : 'diagnostics')
+const DIAGNOSTICS_KEEP = 5
+const DIAGNOSTICS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+pruneDiagnostics(diagnosticsDir, DIAGNOSTICS_KEEP, DIAGNOSTICS_MAX_AGE_MS)
+
 /**
  * threadpool 看門狗：探測走 fs.stat（與 pty 輸入、讀寫看板共用 libuv threadpool），
  * 30 秒一輪、超過 5 秒算異常。曾發生 app 無法輸入、重開視窗卡在載入中、⌘Q 關不掉，
- * 三者都指向 threadpool 被佔滿，靠它在 log 留下發生時間
+ * 三者都指向 threadpool 被佔滿，靠它在 log 留下發生時間。
+ * 卡住超過 60 秒就抓診斷快照、同步存看板，並詢問是否重新啟動（卡住後不會自己恢復）
  */
 const WATCHDOG_INTERVAL_MS = 30_000
 const WATCHDOG_THRESHOLD_MS = 5_000
-const watchdog = new ThreadpoolWatchdog(() => fs.stat(homedir()), WATCHDOG_INTERVAL_MS, WATCHDOG_THRESHOLD_MS)
+const WATCHDOG_ALERT_MS = 60_000
+const watchdog = new ThreadpoolWatchdog(() => fs.stat(homedir()), WATCHDOG_INTERVAL_MS, WATCHDOG_THRESHOLD_MS, {
+  alertMs: WATCHDOG_ALERT_MS,
+  onStuck: handleThreadpoolStuck,
+})
+
+/** 此時 threadpool 仍卡著：只能用同步 I/O、子程序與原生對話框，不可 await 任何 fs 操作 */
+function handleThreadpoolStuck(stuckMs: number): void {
+  const snapshot = captureStuckDiagnostics(diagnosticsDir, { stuckMs, version: app.getVersion() })
+  store.flushSync()
+
+  const options = {
+    type: 'warning' as const,
+    message: 'Shark Terminal 內部卡住了，終端輸入暫時無法運作',
+    detail:
+      '看板已另外存檔。重新啟動後，卡片裡的 Claude session 會關閉，需要再開一次。' +
+      (snapshot ? `\n\n診斷資料：${snapshot}` : ''),
+    buttons: ['重新啟動', '稍後'],
+    defaultId: 0,
+    cancelId: 1,
+  }
+  const prompt = mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options)
+  prompt
+    .then(({ response }) => {
+      if (response !== 0) {
+        console.warn('[main] 使用者選擇稍後再重新啟動，threadpool 仍卡住', { stuckMs })
+        return
+      }
+      console.warn('[main] 使用者選擇重新啟動', { stuckMs })
+      app.relaunch()
+      app.quit()
+    })
+    .catch((err) => {
+      console.error('[main] 顯示卡住提示失敗', { err })
+    })
+}
 
 /** 結束前清理的上限：flush 與 killAll 走 fs / 信號，卡住時不能讓 app 永遠關不掉 */
 const QUIT_CLEANUP_TIMEOUT_MS = 3000
@@ -144,6 +187,8 @@ app.on('before-quit', (event) => {
   }
   event.preventDefault()
   cleaningUp = true
+  // threadpool 卡死時下面的 flush 永遠不會完成，先用同步寫入把看板落地
+  if (watchdog.isStuck) store.flushSync()
   scanner.stop()
   watchdog.stop()
   void (async () => {

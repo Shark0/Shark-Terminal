@@ -411,3 +411,39 @@ describe('BoardStore 唯讀模式與清理失敗', () => {
     warn.mockRestore()
   })
 })
+
+describe('BoardStore.flushSync', () => {
+  it('同步寫出最近一次 save 的內容，不必等 debounce', async () => {
+    const store = new BoardStore(file, 10_000)
+    const board = sampleBoard()
+    board.columns[0].title = '同步寫出'
+    store.save(board)
+
+    store.flushSync()
+
+    const written = JSON.parse(await fs.readFile(file, 'utf8')) as Board
+    expect(written.columns[0].title).toBe('同步寫出')
+    expect((await fs.readdir(root)).filter((f) => f.endsWith('.tmp'))).toEqual([])
+  })
+
+  it('非同步寫入已接手（threadpool 卡住時永遠不會完成）仍會寫出最新內容', async () => {
+    const store = new BoardStore(file, 10_000)
+    const board = sampleBoard()
+    board.columns[0].title = '已交給非同步寫入'
+    store.save(board)
+    // 不 await：模擬 writeAtomic 卡在 threadpool，pending 已被清空
+    const inFlight = store.flush()
+
+    store.flushSync()
+
+    const written = JSON.parse(await fs.readFile(file, 'utf8')) as Board
+    expect(written.columns[0].title).toBe('已交給非同步寫入')
+    await inFlight
+  })
+
+  it('從未 save 過時不建立檔案', async () => {
+    const store = new BoardStore(file, 10_000)
+    store.flushSync()
+    await expect(fs.access(file)).rejects.toThrow()
+  })
+})

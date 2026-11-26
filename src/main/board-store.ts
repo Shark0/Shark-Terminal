@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { promises as fs, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { Board, BoardLoadResult, Card, Column } from '@shared/types'
 import { createDefaultBoard } from '@shared/factory'
@@ -85,6 +85,8 @@ export function reconcile(board: Board): Board {
 export class BoardStore {
   private timer: NodeJS.Timeout | null = null
   private pending: Board | null = null
+  /** 最近一次 save 的內容；pending 交給非同步寫入後就清空，flushSync 要靠這份 */
+  private latest: Board | null = null
   /** 讀檔失敗且原檔可能存在時進入唯讀，避免後續寫入覆蓋掉讀不到的原檔 */
   private readOnly = false
   /** tmp 檔名遞增序號，同一毫秒內的併發呼叫也不會撞名（Date.now() 沒有這個保證） */
@@ -162,6 +164,7 @@ export class BoardStore {
       return
     }
     this.pending = board
+    this.latest = board
     if (this.timer) clearTimeout(this.timer)
     this.timer = setTimeout(() => {
       void this.flush().catch((err) => {
@@ -194,6 +197,32 @@ export class BoardStore {
       this.writing = nextWriting
     }
     if (this.writing) await this.writing
+  }
+
+  /**
+   * 用同步 I/O 寫出最近一次 save 的內容，給 threadpool 卡死時用：
+   * 那時非同步寫入永遠不會完成，flush() 也就永遠等不到。
+   * 不論 pending 是否已交給非同步寫入都寫 latest，最新內容才不會卡在那條永遠不會完成的寫入裡。
+   */
+  flushSync(): void {
+    if (this.readOnly || !this.latest) return
+    // 不動 timer 與 pending：threadpool 若恢復，卡住的舊寫入會先落地，
+    // 留著的 debounce 才能接著把最新內容再寫一次，不會被舊內容蓋掉
+    const tmp = `${this.filePath}.${process.pid}.${this.tmpSeq++}.tmp`
+    try {
+      mkdirSync(path.dirname(this.filePath), { recursive: true })
+      writeFileSync(tmp, JSON.stringify(this.latest, null, 2), 'utf8')
+      renameSync(tmp, this.filePath)
+      this.writeFailed = false
+    } catch (err) {
+      console.error('[board-store] 同步寫入 board.json 失敗', { filePath: this.filePath, err })
+      this.writeFailed = true
+      try {
+        rmSync(tmp, { force: true })
+      } catch (cleanupErr) {
+        console.warn('[board-store] 清理暫存檔失敗，可能殘留 .tmp', { tmp, err: cleanupErr })
+      }
+    }
   }
 
   /**
